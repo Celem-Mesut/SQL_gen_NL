@@ -1,0 +1,8 @@
+[theme]
+# Claude.ai'nin sicak/krem renk paletine yakin bir tema.
+# Kaynak: Anthropic marka rengleri (Crail, Pampas, Cloudy).
+primaryColor = "#C15F3C"
+backgroundColor = "#F4F3EE"
+secondaryBackgroundColor = "#EAE7DD"
+textColor = "#262624"
+font = "sans serif"

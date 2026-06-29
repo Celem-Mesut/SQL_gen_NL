@@ -10,12 +10,18 @@ kolonu, vb.) ekleyin ve sonuclari indirin.
 Sayfalar (sol kenar cubugundaki butonlarla gezilir):
     Home         -> dosya yukleme + aciklamalar
     Output       -> uretilen view'ler (cok-asamali Excel'de alt-sekmeler)
+    Lineage      -> her tablo icin, tum asamalar arasi soy agaci diyagrami
     Instellingen -> CREATE OR ALTER VIEW / GO ayarlari
     Sjablonen    -> sablon indirme + onizleme
 
 NOT: Kullanici arayuzu (butonlar, basliklar, hata mesajlari) TAMAMEN
 HOLLANDACA'dir -- bu, programin son kullanicisi icindir. Bu Python
 dosyasindaki KOD YORUMLARI (gelistirici notlari) Turkce kalmistir.
+
+IKON KURALI: Tum ikonlar Google Material Symbols (`:material/isim:`)
+kullanir -- emoji DEGIL. Bu, hem `icon=` parametresi destekleyen
+widget'larda (st.button, st.download_button) hem de metin/markdown icine
+gomulu olarak (st.title, st.caption, expander/tab etiketleri) calisir.
 
 Calistirmak icin:
     pip install -r requirements.txt
@@ -37,6 +43,7 @@ from sql_generator import (
     qualified_view_name,
     render_view_sql,
 )
+from lineage import build_lineage_dot, build_lineage_index
 
 st.set_page_config(page_title="CSV/Excel -> T-SQL View Generator", page_icon=":material/code:", layout="wide")
 
@@ -67,13 +74,19 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-NAV_PAGES = [("Home", ":material/home:"), ("Output", ":material/sql:"), ("Instellingen", ":material/settings:"), ("Sjablonen", ":material/csv:")]
+NAV_PAGES = [
+    ("Home", ":material/home:"),
+    ("Output", ":material/sql:"),
+    ("Lineage", ":material/hub:"),
+    ("Instellingen", ":material/settings:"),
+    ("Sjablonen", ":material/csv:"),
+]
 
 
 def _stage_icon(stage_name):
     """Geeft een passend symbool terug op basis van de naam van de fase
     (Medallion-architectuur: Bronze/Silver/Gold -- zowel NL als EN termen
-    worden herkend). Onbekende namen krijgen een generiek mapsymbool."""
+    worden herkend). Onbekende namen krijgen een generiek vraagteken-symbool."""
     name = stage_name.lower()
     if "goud" in name or "gold" in name:
         return ":material/schema:"
@@ -155,9 +168,9 @@ def render_manual_columns_ui(view_key, col_map):
             )
             sug_btn.button(
                 "Toevoegen", key=f"{state_key}_{uid}_suggbtn",
-                on_click=_append_suggestion, args=(parts_key, sugg_key),icon=":material/add:"
+                on_click=_append_suggestion, args=(parts_key, sugg_key), icon=":material/add:",
             )
-            if del_btn.button("Verwijder", key=f"{state_key}_{uid}_del",icon=":material/delete:"):
+            if del_btn.button("Verwijder", key=f"{state_key}_{uid}_del", icon=":material/delete:"):
                 to_delete = uid
 
     if to_delete is not None:
@@ -217,7 +230,7 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
         view_key = f"{stage_name}::{target_schema}::{target_table}"
         col_map = {c["target_column"]: c["expr"] for c in view_data["columns"]}
 
-        title = f"🔹 {qualified_view_name(view_data)}  —  {item['column_count']} kolommen"
+        title = f":material/table_view: {qualified_view_name(view_data)}  —  {item['column_count']} kolommen"
 
         with st.expander(title, expanded=False):
             st.caption(":material/extension: Handmatig toegevoegde kolommen (bijv. Business Key, controlekolom, ...)")
@@ -231,9 +244,9 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
 
             st.code(final_sql, language="sql")
             st.download_button(
-                "⬇Download deze view", data=final_sql.encode("utf-8"),
+                "Download deze view", data=final_sql.encode("utf-8"),
                 file_name=f"{qualified_view_name(view_data, brackets=False)}.sql", mime="text/sql",
-                key=f"dl_{view_key}", icon=":material/download:"
+                key=f"dl_{view_key}", icon=":material/download:",
             )
         final_sqls.append(final_sql)
 
@@ -243,7 +256,7 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
             f"Download alle views van fase '{stage_name}'",
             data=combined.encode("utf-8"),
             file_name=f"{stage_name}.sql", mime="text/sql",
-            key=f"dl_stage_{stage_name}", icon=":material/download:"
+            key=f"dl_stage_{stage_name}", icon=":material/download:",
         )
     return final_sqls
 
@@ -376,6 +389,14 @@ if st.session_state.page == "Home":
             "toevoegen als u wilt, en elk afzonderlijk weer verwijderen."
         )
 
+    with st.expander(":material/hub: Wat toont de Lineage-pagina?"):
+        st.markdown(
+            "De **:material/hub: Lineage**-pagina toont voor elke gegenereerde "
+            "view een diagram met de volledige herkomst over alle fasen heen "
+            "(bijv. Silver → GGM → Gold). Dit wordt automatisch afgeleid uit de "
+            "`source_table`-verwijzingen -- geen extra configuratie nodig."
+        )
+
 
 # ============================================================================
 # PAGINA: Output
@@ -411,11 +432,39 @@ elif st.session_state.page == "Output":
         st.divider()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         st.download_button(
-            ":material/download: Download ALLE views van ALLE fasen als één SQL-bestand",
+            "Download ALLE views van ALLE fasen als één SQL-bestand",
             data="\n\n".join(all_final_sqls).encode("utf-8"),
             file_name=f"all_stages_{timestamp}.sql", mime="text/sql",
-            type="primary",
+            type="primary", icon=":material/download:",
         )
+
+
+# ============================================================================
+# PAGINA: Lineage
+# ============================================================================
+elif st.session_state.page == "Lineage":
+    st.title(":material/hub: Lineage")
+    st.caption(
+        "Toont voor elke gegenereerde view de volledige herkomst (lineage) "
+        "over alle fasen heen -- bijv. Silver → GGM → Gold."
+    )
+
+    if not st.session_state.stages:
+        st.info("Upload eerst een bestand op de **:material/home: Home**-pagina.")
+        st.stop()
+
+    lineage_index = build_lineage_index(st.session_state.stages)
+
+    if not lineage_index:
+        st.warning("Er zijn geen views gevonden om de lineage van te tonen.")
+        st.stop()
+
+    qnames = list(lineage_index.keys())
+    lineage_tabs = st.tabs(qnames)
+    for tab, qname in zip(lineage_tabs, qnames):
+        with tab:
+            dot = build_lineage_dot(qname, lineage_index)
+            st.graphviz_chart(dot)
 
 
 # ============================================================================
@@ -459,7 +508,7 @@ elif st.session_state.page == "Sjablonen":
             csv_bytes = f.read()
         col_t1.download_button(
             "CSV-sjabloon", data=csv_bytes, file_name="csv2sql_template.csv",
-            mime="text/csv", width='stretch',icon=":material/download:"
+            mime="text/csv", width='stretch', icon=":material/download:",
         )
     except FileNotFoundError:
         col_t1.warning("template.csv ontbreekt")
@@ -469,7 +518,7 @@ elif st.session_state.page == "Sjablonen":
         col_t2.download_button(
             "Excel-sjabloon", data=xlsx_bytes, file_name="csv2sql_template.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            width='stretch',icon=":material/download:"
+            width='stretch', icon=":material/download:",
         )
     except FileNotFoundError:
         col_t2.warning("template.xlsx ontbreekt")

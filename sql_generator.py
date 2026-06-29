@@ -54,21 +54,22 @@ Opsiyonel kolonlar:
     join_condition   -> join_type ile birlikte, o tabloya ait ILK satirda
                          belirtilmelidir (ON kosulu, serbest metin).
 
-Alias kurali (ONEMLI):
+:material/link_2: Alias kurali (ONEMLI):
     Bir view SADECE TEK bir kaynak tablodan besleniyorsa (JOIN yoksa), SELECT
     listesinde kolon adlarinin onune tablo/alias ONEKI EKLENMEZ -- sadece
     "[Kolon]" yazilir, cunku tek tablo varken bu onek gereksiz gurultudur.
     Birden fazla kaynak tablo (JOIN) varsa, hangi kolonun hangi tablodan
     geldigi belirsiz olacagindan, "[Alias].[Kolon]" formati kullanilir.
 
-Business Key (BK):
-    Kaynak/hedef tablolarinda yer almayan, sadece kayitlarin essizligini
-    kontrol etmek icin kullanilan, BIRLESIK (composite) bir anahtar kolonu,
-    CSV/Excel'den DEGIL, kullanici arayuzunden (Streamlit) manuel olarak her
-    view icin ayri ayri eklenebilir. HASH DEGILDIR -- secilen parcalar
-    ' | ' ile birlestirilip VARCHAR(255)'e CAST edilir (okunabilir/
-    karsilastirilabilir kalir). Bkz. `parse_business_key_input`,
-    `build_business_key_select_line` ve `render_view_sql(..., business_key=...)`.
+:material/extension: Manuel kolonlar (Business Key VE daha fazlasi):
+    Kaynak/hedef tablolarinda yer almayan, kullanici arayuzunden (Streamlit)
+    manuel olarak her view icin ayri ayri eklenebilen, BIRLESIK (composite)
+    anahtar kolonlari -- Business Key (kayitlarin essizligini kontrol etmek
+    icin) en yaygin ornektir, ama herhangi bir amacla (kontrol kolonu, vb.)
+    birden fazla kolon eklenebilir. CSV/Excel'den GELMEZ. HASH DEGILDIR --
+    secilen parcalar ' | ' ile birlestirilip VARCHAR(255)'e CAST edilir
+    (okunabilir/karsilastirilabilir kalir). Bkz. `parse_business_key_input`,
+    `build_business_key_select_line` ve `render_view_sql(..., extra_columns=...)`.
 """
 
 from collections import OrderedDict

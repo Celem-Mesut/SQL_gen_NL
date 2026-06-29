@@ -43,7 +43,7 @@ from sql_generator import (
     qualified_view_name,
     render_view_sql,
 )
-from lineage import build_lineage_dot, build_lineage_index
+from lineage import build_lineage_dot, build_lineage_index, find_terminal_views
 
 st.set_page_config(page_title="CSV/Excel -> T-SQL View Generator", page_icon=":material/code:", layout="wide")
 
@@ -445,8 +445,11 @@ elif st.session_state.page == "Output":
 elif st.session_state.page == "Lineage":
     st.title(":material/hub: Lineage")
     st.caption(
-        "Toont voor elke gegenereerde view de volledige herkomst (lineage) "
-        "over alle fasen heen -- bijv. Silver → GGM → Gold."
+        "Toont per **eindtabel** (een view die niet als bron voor een andere "
+        "view dient) de volledige herkomst (lineage) over alle fasen heen -- "
+        "bijv. Silver → GGM → Gold. Tussenliggende views (bijv. GGM) krijgen "
+        "geen eigen tabblad, omdat hun herkomst al zichtbaar is binnen het "
+        "diagram van de eindtabel die ze voedt."
     )
 
     if not st.session_state.stages:
@@ -459,7 +462,7 @@ elif st.session_state.page == "Lineage":
         st.warning("Er zijn geen views gevonden om de lineage van te tonen.")
         st.stop()
 
-    qnames = list(lineage_index.keys())
+    qnames = find_terminal_views(lineage_index)
     lineage_tabs = st.tabs(qnames)
     for tab, qname in zip(lineage_tabs, qnames):
         with tab:

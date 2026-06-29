@@ -10,16 +10,16 @@ tarayicida (d3-graphviz ile) render eder, sunucuda sistem binary'si gerekmez.
 NOT: Bu dosyada hicbir st.* cagrisi YOKTUR (saf arka uc mantigi) -- yukaridaki
 :material/hub: isareti, sadece app.py'deki "Lineage" sayfasinin ikonuyla
 GORSEL/KAVRAMSAL eslesme amaclidir, kod calisma zamaninda bir etkisi yoktur.
+
+RENKLENDIRME: Her node, ADINDA GECEN Medallion katmanina gore (Silver/GGM/
+Gold/Bronze -- hem NL hem EN terimler) AYIRT EDICI ama birbiriyle UYUMLU bir
+renk alir (bkz. _layer_style). Boylece bir Gold view'in soy agacinda Silver
+ve GGM dugumlerini renklerinden aninda ayirt edebilirsiniz.
 """
 
 from collections import OrderedDict
 
 from sql_generator import generate_all_views, qualified_view_name
-
-# Renkler -- .streamlit/config.toml'daki Claude.ai temasiyla tutarli
-_COLOR_TARGET = "#C15F3C"      # Crail (vurgu) -- bu sekmenin oduncu tablosu
-_COLOR_KNOWN_VIEW = "#EAE7DD"  # Pampas/Cloudy arasi -- baska bir asamanin urettigi ara view
-_COLOR_LEAF = "#FFFFFF"        # beyaz -- ham/bilinmeyen kaynak (baska bir CSV asamasi tarafindan uretilmemis)
 
 
 def _direct_sources(group_df):
@@ -64,6 +64,34 @@ def build_lineage_index(stages):
     return index
 
 
+def _resolve_match(system, schema, table, index, exclude=None):
+    """(system, schema, table) uclusunun, index'teki BASKA bir view'e
+    karsilik gelip gelmedigini kontrol eder. Esleserse o view'in qualified
+    adini, eslesmezse None doner."""
+    candidates = [_qkey(system, schema, table), _qkey("", schema, table)]
+    return next((k for k in candidates if k in index and k != exclude), None)
+
+
+def find_terminal_views(index):
+    """Index'teki view'lerden, HICBIR BASKA view tarafindan kaynak olarak
+    KULLANILMAYANLARI (yani her zincirin EN SONUNDAKI / "nihai" katmandaki
+    tablolari) dondurur.
+
+    NEDEN: Bir Gold view'in soy agaci, zaten kendi GGM/Silver atalarini
+    icinde gosteriyor -- bu yuzden GGM'nin KENDI ayri bir sekmesi/diyagrami
+    GEREKSIZ TEKRARDIR (kullanicinin belirttigi sorun). Sadece zincirin
+    sonundaki (hicbir sonraki asama tarafindan tuketilmeyen) view'leri
+    sekme olarak gosterip, ara katmanlari SADECE o sekmelerin diyagrami
+    ICINDE gosteriyoruz."""
+    consumed = set()
+    for qname, info in index.items():
+        for system, schema, table in info["direct_sources"]:
+            matched = _resolve_match(system, schema, table, index, exclude=qname)
+            if matched:
+                consumed.add(matched)
+    return [q for q in index if q not in consumed]
+
+
 def trace_lineage(qname, index, _visited=None):
     """qname icin TUM atalarini (ancestors) recursive olarak bulur.
 
@@ -85,8 +113,7 @@ def trace_lineage(qname, index, _visited=None):
         return nodes, edges  # leaf -- bizim urettigimiz bir view degil
 
     for system, schema, table in info["direct_sources"]:
-        candidates = [_qkey(system, schema, table), _qkey("", schema, table)]
-        matched = next((k for k in candidates if k in index and k != qname), None)
+        matched = _resolve_match(system, schema, table, index, exclude=qname)
         src_label = matched or _qkey(system, schema, table)
         nodes.add(src_label)
         edges.add((src_label, qname))
@@ -96,6 +123,28 @@ def trace_lineage(qname, index, _visited=None):
             edges |= sub_edges
 
     return nodes, edges
+
+
+def _layer_style(node_name, is_target=False):
+    """Node adinda gecen Medallion katmanina (Silver/GGM/Gold/Bronze -- hem
+    NL hem EN terimler) gore uyumlu ama AYIRT EDICI bir renk cifti
+    (fillcolor, bordercolor) doner. Oduncu (focus) node, AYNI renk ailesinde
+    kalip sadece daha kalin bir cizgiyle (penwidth) vurgulanir -- yeni bir
+    renk EKLEMEZ, kullanicinin "her seviye icin bir renk yeterli" istegine
+    uygun."""
+    name_lower = node_name.lower()
+    if "goud" in name_lower or "gold" in name_lower:
+        fill, border = "#C9E4D3", "#5A9B76"   # yesil tonlar -- Gold
+    elif "ggm" in name_lower:
+        fill, border = "#BFD7EF", "#5B85B8"   # mavi tonlar -- GGM
+    elif "zilver" in name_lower or "silver" in name_lower:
+        fill, border = "#F6E2A8", "#C9A227"   # sari tonlar -- Silver
+    elif "brons" in name_lower or "bronze" in name_lower:
+        fill, border = "#E3C6A8", "#A97142"   # bronz tonlar -- Bronze
+    else:
+        fill, border = "#EDEAE3", "#9C9890"   # bilinmeyen katman -- notr gri
+    penwidth = "2.2" if is_target else "1"
+    return fill, border, penwidth
 
 
 def build_lineage_dot(qname, index, direction="LR"):
@@ -110,14 +159,12 @@ def build_lineage_dot(qname, index, direction="LR"):
         '  edge [color="#9C9890"];',
     ]
     for n in sorted(nodes):
-        if n == qname:
-            fill, font = _COLOR_TARGET, "white"
-        elif n in index:
-            fill, font = _COLOR_KNOWN_VIEW, "#262624"
-        else:
-            fill, font = _COLOR_LEAF, "#262624"
+        fill, border, penwidth = _layer_style(n, is_target=(n == qname))
         escaped = n.replace('"', '\\"')
-        lines.append(f'  "{n}" [label="{escaped}", fillcolor="{fill}", fontcolor="{font}", color="#9C9890"];')
+        lines.append(
+            f'  "{n}" [label="{escaped}", fillcolor="{fill}", fontcolor="#262624", '
+            f'color="{border}", penwidth={penwidth}];'
+        )
     for src, dst in sorted(edges):
         lines.append(f'  "{src}" -> "{dst}";')
     lines.append("}")

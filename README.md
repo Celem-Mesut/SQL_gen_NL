@@ -21,11 +21,45 @@ Uygulama **4 sayfaya** bölünmüştür, sol kenar çubuğundaki butonlarla gezi
 |---|---|
 | 🏠 **Home** | Dosya yükleme + tüm açıklama bölümleri |
 | 📊 **Output** | Üretilen view'ler (çok-aşamalı Excel'de aşama başına bir sekme, örn. 🥈 Silver→GGM, 🥇 GGM→Gold) |
+| 🧬 **Lineage** | Her tablo için ayrı bir sekme — o tablonun **tüm asamalardaki** kaynak zincirini (örn. Silver → GGM → Gold) gösteren bir soy ağacı diyagramı |
 | ⚙️ **Instellingen** | `CREATE OR ALTER VIEW` / `GO` ayarları |
 | 📄 **Sjablonen** | Şablon indirme + içeriklerinin önizlemesi |
 
 Home'da yüklenen dosya `st.session_state` üzerinden saklanır — başka bir
 sayfaya geçip geri döndüğünüzde veri kaybolmaz.
+
+## 🧬 Lineage sayfası — nasıl çalışır
+
+`lineage.py`, tüm aşamalardaki (Excel sayfalarındaki) view'lerin birbirine
+olan bağımlılığını otomatik çıkarır: bir aşamanın ürettiği bir view, bir
+SONRAKİ aşamada `source_table` olarak referans veriliyorsa, bunlar otomatik
+olarak zincirlenir (isim eşleşmesiyle — ekstra bir ayar gerekmez).
+
+**Sadece zincirin EN SONUNDAKİ (nihai) tabloları sekme olarak gösterilir** —
+örn. `Silver_to_GGM` + `GGM_to_Gold` yüklediyseniz, sadece Gold katmanındaki
+2 view sekme olarak çıkar; GGM katmanının kendi ayrı sekmesi yoktur, çünkü
+GGM'nin soy ağacı zaten Gold sekmesinin diyagramı **içinde** görünür —
+ayrı bir sekme göstermek gereksiz tekrar olurdu.
+
+Her sekmede, o tablonun **tüm atalarını** (kaç aşama geriye giderse gitsin)
+gösteren bir Graphviz diyagramı render edilir. Renkler, node adında geçen
+Medallion katmanına göre (hem NL hem EN terimler tanınır) otomatik atanır —
+uyumlu ama birbirinden ayırt edilebilir:
+
+| Katman | Renk |
+|---|---|
+| Silver / Zilver | 🟨 Sarı tonlar |
+| GGM | 🟦 Mavi tonlar |
+| Gold / Goud | 🟩 Yeşil tonlar |
+| Bronze / Brons | 🟫 Bronz tonlar |
+| (tanınmayan) | ⬜ Nötr gri |
+
+Sekmenin **odak tablosu**, kendi katmanının rengini korur — sadece daha
+kalın bir kenarlıkla vurgulanır (yeni bir renk eklenmez).
+
+Bu diyagram **hiçbir ek paket gerektirmez** — `st.graphviz_chart()`,
+Graphviz DOT dilini doğrudan tarayıcıda (d3-graphviz ile) render eder, ne
+`graphviz` pip paketi ne sistem Graphviz binary'si kurulu olmasına gerek yok.
 
 ## Sayfa sembolleri (çok aşamalı Excel)
 
@@ -186,8 +220,9 @@ güncel resmi marka kılavuzunda kesin hex kodları değişmiş olabilir.
 
 ## Dosyalar
 
-- `app.py` — Streamlit arayüzü (CSV + çok-sayfalı Excel + BK)
+- `app.py` — Streamlit arayüzü (CSV + çok-sayfalı Excel + manuel kolonlar + Lineage)
 - `sql_generator.py` — CSV/Excel ayrıştırma + SQL üretim mantığı (bağımsız da kullanılabilir)
+- `lineage.py` — Aşamalar arası soy ağacı (lineage) çıkarımı ve Graphviz DOT üretimi
 - `template.csv` — Tek aşamalı örnek
 - `template.xlsx` — İki bağımsız warehouse'lu (GGM_Warehouse, Gold_Warehouse) iki aşamalı örnek
 - `.streamlit/config.toml` — Renk teması

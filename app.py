@@ -230,7 +230,10 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
         view_key = f"{stage_name}::{target_schema}::{target_table}"
         col_map = {c["target_column"]: c["expr"] for c in view_data["columns"]}
 
-        title = f":material/table_view: {qualified_view_name(view_data)}  —  {item['column_count']} kolommen"
+        title = f":material/table_view: {qualified_view_name(view_data)}"
+        if view_data.get("target_system"):
+            title += f"  →  {view_data['target_system']}"
+        title += f"  —  {item['column_count']} kolommen"
 
         with st.expander(title, expanded=False):
             st.caption(":material/extension: Handmatig toegevoegde kolommen (bijv. Business Key, controlekolom, ...)")
@@ -245,7 +248,10 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
             st.code(final_sql, language="sql")
             st.download_button(
                 "Download deze view", data=final_sql.encode("utf-8"),
-                file_name=f"{qualified_view_name(view_data, brackets=False)}.sql", mime="text/sql",
+                file_name=(
+                    (f"{view_data['target_system']}." if view_data.get("target_system") else "")
+                    + f"{qualified_view_name(view_data, brackets=False)}.sql"
+                ), mime="text/sql",
                 key=f"dl_{view_key}", icon=":material/download:",
             )
         final_sqls.append(final_sql)

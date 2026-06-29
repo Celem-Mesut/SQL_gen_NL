@@ -31,14 +31,14 @@ Opsiyonel kolonlar:
     source_system    -> capraz warehouse/lakehouse SORGUSU icin 3 parcali
                          isimlendirme (FROM/JOIN tarafinda). Bos birakilabilir.
     target_system    -> bu view'in HANGI warehouse/lakehouse'a ait oldugunu
-                         belirtir. Doluysa, CREATE VIEW'in nitelik (qualifier)
-                         konumunda GERCEK 3 parcali isimlendirme kullanilir:
-                         [target_system].[target_schema].[view_name] --
-                         ayni isimde semaya sahip birden fazla warehouse'u
-                         birbirinden ayirt etmek icin gereklidir. Bossa, sade
-                         2 parcali [target_schema].[view_name] kullanilir.
-                         Bir target_table grubundaki TUM satirlarda AYNI
-                         olmali (veya hepsi bos). Bkz. qualified_view_name().
+                         belirtir. SADECE bilgi/dokumantasyon amaclidir --
+                         doluysa, uretilen SQL'in basina "-- Doel Warehouse/
+                         Lakehouse: ..." yorum satiri olarak eklenir, ama
+                         CREATE VIEW'in nitelik (qualifier) konumunu
+                         DEGISTIRMEZ -- orada HER ZAMAN sade 2 parcali
+                         [target_schema].[view_name] kullanilir. Bir
+                         target_table grubundaki TUM satirlarda AYNI olmali
+                         (veya hepsi bos). Bkz. qualified_view_name().
     source_datatype  -> bos veya target_datatype ile ayniysa CAST uygulanmaz,
                          farkliysa otomatik CAST(...) eklenir.
     transformation   -> ozel SQL ifadesi. "{src}" yer tutucusu, kalifiye
@@ -218,17 +218,14 @@ def _view_name(target_table):
 
 
 def qualified_view_name(view_data, brackets=True):
-    """View'in TAM nitelikli (qualified) adini olusturur:
-        target_system varsa -> [target_system].[target_schema].[view_name]  (3 parcali)
-        target_system yoksa  -> [target_schema].[view_name]                 (2 parcali)
-    Hem render_view_sql (gercek SQL'de) hem app.py (baslik/dosya adi
-    gostermek icin, koseli parantezsiz) tarafindan kullanilir -- tek bir
-    yerden tanimlanip her ikisinde de TUTARLI kalmasi icin."""
-    parts = []
-    if view_data["target_system"]:
-        parts.append(view_data["target_system"])
-    parts.append(view_data["target_schema"])
-    parts.append(view_data["view_name"])
+    """View'in nitelikli (qualified) adini olusturur -- HER ZAMAN 2 parcali:
+        [target_schema].[view_name]
+    target_system, CSV/Excel'de gecerli bir kolon olarak KALIR ve hangi
+    warehouse/lakehouse'a ait oldugunu belgeler, ama CREATE VIEW'in nitelik
+    (qualifier) konumunda KULLANILMAZ -- SADECE bilgi/dokumantasyon
+    amaclidir (bkz. render_view_sql'in basina ekledigi yorum satiri ve
+    app.py'deki view basligindaki "-> target_system" eki)."""
+    parts = [view_data["target_schema"], view_data["view_name"]]
     if brackets:
         return ".".join(f"[{p}]" for p in parts)
     return ".".join(parts)
@@ -462,11 +459,12 @@ def render_view_sql(view_data, extra_columns=None):
     for col in view_data["columns"]:
         select_lines.append(f"    {col['expr']} AS [{col['target_column']}]")
 
-    # target_system doluysa GERCEK 3 parcali isimlendirme kullanilir:
-    # [target_system].[target_schema].[view_name]. Bu, ayni isimde semaya
-    # sahip birden fazla warehouse'u birbirinden ayirt etmek icin GEREKLIDIR
-    # (kullanicinin kendi Fabric ortaminda dogruladigi bir gereksinim).
-    # target_system bossa, basit 2 parcali [target_schema].[view_name] kalir.
+    # target_system artik CREATE VIEW'in nitelik (qualifier) konumunda
+    # KULLANILMIYOR -- her zaman sade 2 parcali [target_schema].[view_name]
+    # uretilir (kullanicinin acik talebi). target_system, doluysa, SADECE
+    # bilgi/dokumantasyon amacli bir yorum satiri olarak basa eklenir --
+    # "bu betigi hangi warehouse baglantisina karsi calistirmaliyim"
+    # sorusunu cevaplar, ama DDL'i degistirmez.
     sql = (
         f"{view_data['create_stmt']} {qualified_view_name(view_data)}\n"
         f"AS\n"
@@ -479,6 +477,9 @@ def render_view_sql(view_data, extra_columns=None):
     sql += "\n;"
     if view_data["add_go"]:
         sql += "\nGO"
+
+    if view_data.get("target_system"):
+        sql = f"-- Doel Warehouse/Lakehouse: {view_data['target_system']}\n" + sql
 
     return sql
 

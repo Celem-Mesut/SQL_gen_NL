@@ -150,40 +150,35 @@ LEFT JOIN [GGM_Warehouse].[GGM].[VW_GGM_Persoon] AS [VW_GGM_Persoon]
 
 Bu kural otomatik uygulanır, CSV'den ayarlanamaz.
 
-## 🏭 `target_system` — gerçek 3 parçalı isimlendirme
+## 🏭 `target_system` — sadece bilgi amaçlı
 
-GGM ve Gold katmanları **birbirinden bağımsız warehouse'larda** tutuluyorsa
-ve bu warehouse'larda **aynı isimde şemalar** varsa (örn. her ikisinde de
-bir "Gold" şeması), 2 parçalı `[schema].[view]` isimlendirmesi yetersiz
-kalır — hangi warehouse'a ait olduğu belirsizleşir. Bu yüzden `target_system`
-doluysa, `CREATE OR ALTER VIEW` **gerçek 3 parçalı** bir isim kullanır:
+`target_system`, bu view'in hangi warehouse/lakehouse'a ait olduğunu
+belgeler, ama **`CREATE VIEW`'in nitelik (qualifier) konumunu değiştirmez**
+— orada **her zaman** sade 2 parçalı isimlendirme kullanılır:
 
 ```sql
-CREATE OR ALTER VIEW [Gold_Warehouse].[Gold].[VW_FCT_PW_Inkomensvoorziening]
-AS
-...
-```
-
-`target_system` boşsa (tek warehouse senaryosu), eski sade 2 parçalı hâl
-korunur:
-
-```sql
+-- Doel Warehouse/Lakehouse: Gold_Warehouse
 CREATE OR ALTER VIEW [Gold].[VW_FCT_PW_Inkomensvoorziening]
 AS
 ...
 ```
 
-Bir `target_table` grubundaki **tüm satırlarda** `target_system` aynı olmalı
-(veya hepsi boş). Arayüzdeki view başlığı ve indirilen `.sql` dosya adı da
-**her zaman gerçek nitelikli adı** gösterir (örn.
-`Gold_Warehouse.Gold.VW_FCT_PW_Inkomensvoorziening.sql`).
+`target_system` doluysa, üretilen betiğin **başına bir yorum satırı**
+olarak eklenir — "bu betiği hangi warehouse bağlantısına karşı
+çalıştırmalıyım?" sorusunu cevaplar. Boşsa, betikte hiçbir ek satır olmaz.
 
-> **Not:** Microsoft'un resmi Fabric dokümantasyonu, `SELECT`/`INSERT`/`CTAS`
-> için çapraz-warehouse 3 parçalı isimlendirmeyi açıkça doğruluyor, ancak bağlı
-> olduğunuz warehouse'tan **farklı** bir warehouse'a doğrudan `CREATE VIEW`
-> yapılıp yapılamayacağı dokümantasyonda açık değil. Bu özellik, kullanıcının
-> kendi Fabric ortamındaki gözlemine göre eklendi — eğer Fabric'te syntax
-> hatası verirse, haber verin.
+Bir `target_table` grubundaki **tüm satırlarda** `target_system` aynı olmalı
+(veya hepsi boş). Arayüzdeki view başlığında da `[schema].[view] → target_system`
+şeklinde gösterilir, indirilen `.sql` dosya adı da (farklı warehouse'larda
+aynı isimde şemalar varsa dosyaların birbirinin üzerine yazmaması için)
+`target_system` ile öneklenir (örn. `Gold_Warehouse.Gold.VW_FCT_PW_....sql`).
+
+> **Geçmiş not:** Önceki bir sürümde `target_system`, gerçek 3 parçalı
+> isimlendirmede (`[target_system].[target_schema].[view_name]`) kullanılıyordu.
+> Gerçek kullanımda bunun gereksiz karmaşıklık yarattığı görüldüğü için
+> (CREATE VIEW zaten her zaman doğru warehouse bağlantısına karşı çalıştırılır,
+> isimde tekrar etmesine gerek yok), sade 2 parçalı + bilgi amaçlı yorum
+> satırı yaklaşımına geri dönüldü.
 
 ## 🧩 Manuel kolonlar (Business Key ve daha fazlası)
 

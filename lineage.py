@@ -64,11 +64,27 @@ def build_lineage_index(stages):
     return index
 
 
+def _table_name_variants(table):
+    """Bir tablo adinin, 'VW_' onekli VE oneksiz halini doner. NEDEN:
+    sql_generator.py'deki _view_name(), her zaman target_table'a otomatik
+    'VW_' oneki ekler -- ama bir SONRAKI asamada bu view'i source_table
+    olarak referans veren kullanici, bu oneki YAZMAYI UNUTABILIR (bu,
+    gercekte karsilasilan bir senaryo). Bu fonksiyon, esleme yaparken HER
+    IKI hali de denememizi saglar, boylece kullanici onek konusunda hata
+    yapsa bile lineage zinciri KIRILMAZ."""
+    if table.lower().startswith("vw_"):
+        return {table, table[3:]}
+    return {table, f"VW_{table}"}
+
+
 def _resolve_match(system, schema, table, index, exclude=None):
     """(system, schema, table) uclusunun, index'teki BASKA bir view'e
-    karsilik gelip gelmedigini kontrol eder. Esleserse o view'in qualified
-    adini, eslesmezse None doner."""
-    candidates = [_qkey(system, schema, table), _qkey("", schema, table)]
+    karsilik gelip gelmedigini kontrol eder ('VW_' onek farkini tolere
+    ederek). Esleserse o view'in qualified adini, eslesmezse None doner."""
+    candidates = []
+    for t in _table_name_variants(table):
+        candidates.append(_qkey(system, schema, t))
+        candidates.append(_qkey("", schema, t))
     return next((k for k in candidates if k in index and k != exclude), None)
 
 

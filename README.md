@@ -31,9 +31,16 @@ sayfaya geçip geri döndüğünüzde veri kaybolmaz.
 ## 🧬 Lineage sayfası — nasıl çalışır
 
 `lineage.py`, tüm aşamalardaki (Excel sayfalarındaki) view'lerin birbirine
-olan bağımlılığını otomatik çıkarır: bir aşamanın ürettiği bir view, bir
+olan bağımlılığını otomatik çıkarır: bir aşamanın `target_table`'ı, bir
 SONRAKİ aşamada `source_table` olarak referans veriliyorsa, bunlar otomatik
-olarak zincirlenir (isim eşleşmesiyle — ekstra bir ayar gerekmez).
+olarak zincirlenir — **sadece tablo adına göre**. Şema ve warehouse/lakehouse
+adları (`source_schema`, `source_system`, `target_schema`, `target_system`)
+eşleştirme için **tamamen yok sayılır**. Bu bilinçli bir tasarım: aynı
+mantıksal tabloya farklı aşamalarda farklı şemalarla referans verilebilir
+(örn. Silver_to_GGM `target_schema=sot` üretirken, GGM_to_Gold aynı tabloyu
+`source_schema=ggm` ile arayabilir) — yine de bu, tek bir lineage zincirinin
+parçasıdır. (`VW_` öneki de otomatik tolere edilir, kullanıcı eklemeyi
+unutsa bile zincir kırılmaz.)
 
 **Sadece zincirin EN SONUNDAKİ (nihai) tabloları sekme olarak gösterilir** —
 örn. `Silver_to_GGM` + `GGM_to_Gold` yüklediyseniz, sadece Gold katmanındaki

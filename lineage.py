@@ -11,6 +11,16 @@ NOT: Bu dosyada hicbir st.* cagrisi YOKTUR (saf arka uc mantigi) -- yukaridaki
 :material/hub: isareti, sadece app.py'deki "Lineage" sayfasinin ikonuyla
 GORSEL/KAVRAMSAL eslesme amaclidir, kod calisma zamaninda bir etkisi yoktur.
 
+ESLESTIRME KURALI (ONEMLI): Bir asamanin urettigi bir view, bir SONRAKI
+asamada source_table olarak referans verildiginde, eslesme SADECE TABLO
+ADINA gore yapilir -- source_schema/source_system/target_schema/
+target_system TAMAMEN YOK SAYILIR. Yani Silver_to_GGM sayfasinda
+target_table='PW_X' ureten bir view, GGM_to_Gold sayfasinda
+source_table='PW_X' yazan HERHANGI bir satirla eslesir, sema/warehouse
+isimleri farkli olsa BILE (orn. 'sot' vs 'ggm'). Bu, kullanicinin acik
+talebidir: ortamda ayni mantiksal tabloya farkli semalarda referans
+verilebiliyor, ama bu hala AYNI lineage zincirinin parcasidir.
+
 RENKLENDIRME: Her node, ADINDA GECEN Medallion katmanina gore (Silver/GGM/
 Gold/Bronze -- hem NL hem EN terimler) AYIRT EDICI ama birbiriyle UYUMLU bir
 renk alir (bkz. _layer_style). Boylece bir Gold view'in soy agacinda Silver
@@ -24,29 +34,29 @@ from sql_generator import generate_all_views, qualified_view_name
 
 def _direct_sources(group_df):
     """Bir (target_schema, target_table) grubunun TUM satirlarindan,
-    benzersiz (source_system, source_schema, source_table) uclulerini
-    cikarir (CSV sirasi korunur)."""
+    benzersiz source_table degerlerini cikarir (CSV sirasi korunur).
+    NOT: source_schema/source_system kasten YOK SAYILIR -- eslestirme
+    SADECE tablo adina gore yapilir (bkz. modul docstring'i)."""
     seen = OrderedDict()
     for _, row in group_df.iterrows():
-        key = (row["source_system"], row["source_schema"], row["source_table"])
-        seen[key] = True
+        seen[row["source_table"]] = True
     return list(seen.keys())
 
 
-def _qkey(system, schema, table):
-    """qualified_view_name ile AYNI formatta bir arama anahtari uretir
-    (boylece bir source ucluusunun, baska bir asamanin uretttigi bir view'e
-    karsilik gelip gelmedigini index'te arayabiliriz)."""
-    parts = [p for p in (system, schema, table) if p]
-    return ".".join(parts)
+def _normalize_table(table):
+    """Tablo adini, 'VW_' onekini ATARAK normallestirir -- boylece
+    'PW_X' ile 'VW_PW_X' AYNI mantiksal tablo olarak eslesir (kullanici
+    bir sonraki asamada onek yazmayi unutsa bile zincir kirilmaz)."""
+    return table[3:] if table.lower().startswith("vw_") else table
 
 
 def build_lineage_index(stages):
     """Tum asamalardaki TUM view'lerin nitelikli adlarini ve dogrudan
-    kaynaklarini tek bir indekse cikarir.
+    kaynaklarini (sadece tablo adi olarak) tek bir indekse cikarir.
 
     Donus: OrderedDict[qualified_name_str] -> {
-        "direct_sources": [(system, schema, table), ...],
+        "direct_sources": [source_table_str, ...],  # SEMA/SYSTEM YOK
+        "target_table": str,   # bu view'in HAM (CSV'deki) target_table degeri
         "stage": stage_name,
     }
     """
@@ -59,33 +69,35 @@ def build_lineage_index(stages):
             group_df = df[(df["target_schema"] == target_schema) & (df["target_table"] == target_table)]
             index[qname] = {
                 "direct_sources": _direct_sources(group_df),
+                "target_table": target_table,
                 "stage": stage_name,
             }
     return index
 
 
-def _table_name_variants(table):
-    """Bir tablo adinin, 'VW_' onekli VE oneksiz halini doner. NEDEN:
-    sql_generator.py'deki _view_name(), her zaman target_table'a otomatik
-    'VW_' oneki ekler -- ama bir SONRAKI asamada bu view'i source_table
-    olarak referans veren kullanici, bu oneki YAZMAYI UNUTABILIR (bu,
-    gercekte karsilasilan bir senaryo). Bu fonksiyon, esleme yaparken HER
-    IKI hali de denememizi saglar, boylece kullanici onek konusunda hata
-    yapsa bile lineage zinciri KIRILMAZ."""
-    if table.lower().startswith("vw_"):
-        return {table, table[3:]}
-    return {table, f"VW_{table}"}
+def _build_table_lookup(index):
+    """index'teki her view icin, normallestirilmis target_table adindan
+    qualified_name'e giden bir arama tablosu kurar. Birden fazla view AYNI
+    tablo adina sahipse (farkli semalarda ayni isim), ILK GORULENI kullanir
+    (CSV/sayfa sirasina gore) -- bu, coklu eslesme belirsizligini cozmenin
+    en basit/ongorulebilir yoludur."""
+    lookup = OrderedDict()
+    for qname, info in index.items():
+        key = _normalize_table(info["target_table"])
+        if key not in lookup:
+            lookup[key] = qname
+    return lookup
 
 
-def _resolve_match(system, schema, table, index, exclude=None):
-    """(system, schema, table) uclusunun, index'teki BASKA bir view'e
-    karsilik gelip gelmedigini kontrol eder ('VW_' onek farkini tolere
-    ederek). Esleserse o view'in qualified adini, eslesmezse None doner."""
-    candidates = []
-    for t in _table_name_variants(table):
-        candidates.append(_qkey(system, schema, t))
-        candidates.append(_qkey("", schema, t))
-    return next((k for k in candidates if k in index and k != exclude), None)
+def _resolve_match(source_table, table_lookup, exclude=None):
+    """source_table adinin (sema/system yok sayilarak), index'teki BASKA
+    bir view'in target_table'ina karsilik gelip gelmedigini kontrol eder.
+    Esleserse o view'in qualified adini, eslesmezse None doner."""
+    key = _normalize_table(source_table)
+    matched = table_lookup.get(key)
+    if matched and matched != exclude:
+        return matched
+    return None
 
 
 def find_terminal_views(index):
@@ -95,26 +107,28 @@ def find_terminal_views(index):
 
     NEDEN: Bir Gold view'in soy agaci, zaten kendi GGM/Silver atalarini
     icinde gosteriyor -- bu yuzden GGM'nin KENDI ayri bir sekmesi/diyagrami
-    GEREKSIZ TEKRARDIR (kullanicinin belirttigi sorun). Sadece zincirin
-    sonundaki (hicbir sonraki asama tarafindan tuketilmeyen) view'leri
-    sekme olarak gosterip, ara katmanlari SADECE o sekmelerin diyagrami
-    ICINDE gosteriyoruz."""
+    GEREKSIZ TEKRARDIR. Sadece zincirin sonundaki (hicbir sonraki asama
+    tarafindan tuketilmeyen) view'leri sekme olarak gosterip, ara
+    katmanlari SADECE o sekmelerin diyagrami ICINDE gosteriyoruz."""
+    table_lookup = _build_table_lookup(index)
     consumed = set()
     for qname, info in index.items():
-        for system, schema, table in info["direct_sources"]:
-            matched = _resolve_match(system, schema, table, index, exclude=qname)
+        for source_table in info["direct_sources"]:
+            matched = _resolve_match(source_table, table_lookup, exclude=qname)
             if matched:
                 consumed.add(matched)
     return [q for q in index if q not in consumed]
 
 
-def trace_lineage(qname, index, _visited=None):
+def trace_lineage(qname, index, table_lookup=None, _visited=None):
     """qname icin TUM atalarini (ancestors) recursive olarak bulur.
 
     Donus: (nodes, edges)
         nodes: qualified-name string'lerinin kumesi (view'ler VE leaf kaynaklar)
         edges: (kaynak, hedef) ciftlerinin kumesi
     """
+    if table_lookup is None:
+        table_lookup = _build_table_lookup(index)
     if _visited is None:
         _visited = set()
     nodes = {qname}
@@ -128,13 +142,13 @@ def trace_lineage(qname, index, _visited=None):
     if not info:
         return nodes, edges  # leaf -- bizim urettigimiz bir view degil
 
-    for system, schema, table in info["direct_sources"]:
-        matched = _resolve_match(system, schema, table, index, exclude=qname)
-        src_label = matched or _qkey(system, schema, table)
+    for source_table in info["direct_sources"]:
+        matched = _resolve_match(source_table, table_lookup, exclude=qname)
+        src_label = matched or source_table
         nodes.add(src_label)
         edges.add((src_label, qname))
         if matched:
-            sub_nodes, sub_edges = trace_lineage(matched, index, _visited)
+            sub_nodes, sub_edges = trace_lineage(matched, index, table_lookup, _visited)
             nodes |= sub_nodes
             edges |= sub_edges
 

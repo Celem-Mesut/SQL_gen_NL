@@ -21,15 +21,31 @@ isimleri farkli olsa BILE (orn. 'sot' vs 'ggm'). Bu, kullanicinin acik
 talebidir: ortamda ayni mantiksal tabloya farkli semalarda referans
 verilebiliyor, ama bu hala AYNI lineage zincirinin parcasidir.
 
-RENKLENDIRME: Her node, ADINDA GECEN Medallion katmanina gore (Silver/GGM/
-Gold/Bronze -- hem NL hem EN terimler) AYIRT EDICI ama birbiriyle UYUMLU bir
-renk alir (bkz. _layer_style). Boylece bir Gold view'in soy agacinda Silver
-ve GGM dugumlerini renklerinden aninda ayirt edebilirsiniz.
+RENKLENDIRME (ONEMLI): Renkler, node ADININ ICERIGINE (orn. "silver"/"ggm"/
+"gold" kelimeleri gecip gecmedigine) BAKILARAK DEGIL, view'in HANGI ASAMA
+TARAFINDAN URETILDIGINE (gercek pipeline sirasina) gore atanir. Bu, sema/
+warehouse adlandirma kurali ne olursa olsun (orn. kullanicinin gercek
+ortamindaki "sot"/"gin" gibi katmani belli etmeyen sema adlari) HER ZAMAN
+dogru ve tutarli renklendirme saglar. asamalar, kullanicinin Excel'deki
+sayfa SIRASINA gore numaralandirilir (ilk sayfa = en erken/0. seviye); ham
+kaynak tablolar (hicbir asama tarafindan uretilmemis "leaf" node'lar) en
+erken seviyeden bir ONCEKI seviyeye yerlestirilir. Bkz. _assign_levels.
 """
 
 from collections import OrderedDict
 
 from sql_generator import generate_all_views, qualified_view_name
+
+# Kronolojik sira ile: en erken seviye (orn. Silver/ham kaynak) -> en son
+# seviye (orn. Gold/hedef). (fillcolor, bordercolor) ciftleri.
+_PALETTE = [
+    ("#F6E2A8", "#C9A227"),   # sari tonlar -- en erken seviye
+    ("#BFD7EF", "#5B85B8"),   # mavi tonlar -- ara seviye(ler)
+    ("#C9E4D3", "#5A9B76"),   # yesil tonlar -- en son/hedef seviye
+    ("#F3D2B3", "#C97A3D"),   # turuncu tonlar -- ek ara seviye (4+ katman icin)
+    ("#E3C6E8", "#9B6BAE"),   # mor tonlar -- ek ara seviye (5+ katman icin)
+]
+_FALLBACK_COLOR = ("#EDEAE3", "#9C9890")  # notr gri -- palet tukenirse
 
 
 def _direct_sources(group_df):
@@ -56,12 +72,13 @@ def build_lineage_index(stages):
 
     Donus: OrderedDict[qualified_name_str] -> {
         "direct_sources": [source_table_str, ...],  # SEMA/SYSTEM YOK
-        "target_table": str,   # bu view'in HAM (CSV'deki) target_table degeri
+        "target_table": str,    # bu view'in HAM (CSV'deki) target_table degeri
         "stage": stage_name,
+        "stage_order": int,     # stages sozlugundeki SIRA (0 = ilk sayfa/asama)
     }
     """
     index = OrderedDict()
-    for stage_name, df in stages.items():
+    for stage_order, (stage_name, df) in enumerate(stages.items()):
         results, _ = generate_all_views(df, use_create_or_alter=True, add_go=False)
         for (target_schema, target_table), item in results.items():
             view_data = item["view_data"]
@@ -71,6 +88,7 @@ def build_lineage_index(stages):
                 "direct_sources": _direct_sources(group_df),
                 "target_table": target_table,
                 "stage": stage_name,
+                "stage_order": stage_order,
             }
     return index
 
@@ -155,31 +173,59 @@ def trace_lineage(qname, index, table_lookup=None, _visited=None):
     return nodes, edges
 
 
-def _layer_style(node_name, is_target=False):
-    """Node adinda gecen Medallion katmanina (Silver/GGM/Gold/Bronze -- hem
-    NL hem EN terimler) gore uyumlu ama AYIRT EDICI bir renk cifti
-    (fillcolor, bordercolor) doner. Oduncu (focus) node, AYNI renk ailesinde
-    kalip sadece daha kalin bir cizgiyle (penwidth) vurgulanir -- yeni bir
-    renk EKLEMEZ, kullanicinin "her seviye icin bir renk yeterli" istegine
-    uygun."""
-    name_lower = node_name.lower()
-    if "goud" in name_lower or "gold" in name_lower:
-        fill, border = "#C9E4D3", "#5A9B76"   # yesil tonlar -- Gold
-    elif "ggm" in name_lower:
-        fill, border = "#BFD7EF", "#5B85B8"   # mavi tonlar -- GGM
-    elif "zilver" in name_lower or "silver" in name_lower:
-        fill, border = "#F6E2A8", "#C9A227"   # sari tonlar -- Silver
-    elif "brons" in name_lower or "bronze" in name_lower:
-        fill, border = "#E3C6A8", "#A97142"   # bronz tonlar -- Bronze
-    else:
-        fill, border = "#EDEAE3", "#9C9890"   # bilinmeyen katman -- notr gri
-    penwidth = "2.2" if is_target else "1"
-    return fill, border, penwidth
+def _assign_levels(nodes, index):
+    """Her node'a, GERCEK PIPELINE SIRASINA dayanan bir "seviye" (level)
+    atar:
+        - index'te bulunan (yani bir asama tarafindan URETILEN) node'lar
+          icin: o asamanin stage_order'i kullanilir.
+        - index'te BULUNMAYAN (ham/leaf kaynak tablolar -- hicbir asama
+          tarafindan uretilmemis) node'lar icin: mevcut en erken
+          stage_order'dan BIR ONCEKI seviyeye yerlestirilir (cunku
+          kavramsal olarak "ilk asamanin GIRDISI" konumundadirlar).
+
+    Donus: dict[node] -> raw_level (int, kucuk=daha erken/yukari akis)
+    """
+    stage_orders = [index[n]["stage_order"] for n in nodes if n in index]
+    earliest = min(stage_orders) if stage_orders else 0
+    levels = {}
+    for n in nodes:
+        if n in index:
+            levels[n] = index[n]["stage_order"]
+        else:
+            levels[n] = earliest - 1
+    return levels
+
+
+def _level_to_color(level, sorted_distinct_levels):
+    """Bir node'un ham seviyesini (level), o lineage alt-grafiginde
+    GORULEN BENZERSIZ seviyelerin SIRALI listesindeki KONUMUNA gore bir
+    renge cevirir. Boylece kac farkli "katman" varsa (2, 3, 4...), her biri
+    PALETTE'den AYIRT EDICI bir renk alir; en erken katman SARI, en son
+    (hedef) katman YESIL olur, aradakiler MAVI/TURUNCU/MOR ile doldurulur."""
+    position = sorted_distinct_levels.index(level)
+    total = len(sorted_distinct_levels)
+
+    if total == 1:
+        return _PALETTE[2]  # tek katman -- hedefin kendisi -- yesil
+    if position == 0:
+        return _PALETTE[0]  # en erken katman -- sari
+    if position == total - 1:
+        return _PALETTE[2]  # en son katman (hedef) -- yesil
+
+    # Aradaki katmanlar: PALETTE'deki orta renkleri (indeks 1, 3, 4, ...)
+    # sirayla kullanir; palet tukenirse notr griye doner.
+    middle_palette = [_PALETTE[1]] + _PALETTE[3:]
+    middle_index = position - 1
+    if middle_index < len(middle_palette):
+        return middle_palette[middle_index]
+    return _FALLBACK_COLOR
 
 
 def build_lineage_dot(qname, index, direction="LR"):
     """qname icin soy agacini Graphviz DOT dili metnine cevirir."""
     nodes, edges = trace_lineage(qname, index)
+    levels = _assign_levels(nodes, index)
+    sorted_distinct_levels = sorted(set(levels.values()))
 
     lines = [
         "digraph G {",
@@ -189,7 +235,8 @@ def build_lineage_dot(qname, index, direction="LR"):
         '  edge [color="#9C9890"];',
     ]
     for n in sorted(nodes):
-        fill, border, penwidth = _layer_style(n, is_target=(n == qname))
+        fill, border = _level_to_color(levels[n], sorted_distinct_levels)
+        penwidth = "2.2" if n == qname else "1"
         escaped = n.replace('"', '\\"')
         lines.append(
             f'  "{n}" [label="{escaped}", fillcolor="{fill}", fontcolor="#262624", '

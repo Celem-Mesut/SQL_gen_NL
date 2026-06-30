@@ -49,19 +49,25 @@ GGM'nin soy ağacı zaten Gold sekmesinin diyagramı **içinde** görünür —
 ayrı bir sekme göstermek gereksiz tekrar olurdu.
 
 Her sekmede, o tablonun **tüm atalarını** (kaç aşama geriye giderse gitsin)
-gösteren bir Graphviz diyagramı render edilir. Renkler, node adında geçen
-Medallion katmanına göre (hem NL hem EN terimler tanınır) otomatik atanır —
-uyumlu ama birbirinden ayırt edilebilir:
+gösteren bir Graphviz diyagramı render edilir. Renkler, node **adının
+içeriğine bakılmaksızın**, view'in **hangi aşama tarafından üretildiğine**
+(Excel'deki sayfa sırasına) göre otomatik atanır — bu sayede şema/warehouse
+adlarınız "Silver"/"GGM"/"Gold" gibi kelimeler içermese bile (örn. `sot`,
+`gin` gibi kısaltmalar) renklendirme her zaman doğru çalışır:
 
-| Katman | Renk |
+| Konum (pipeline sırasına göre) | Renk |
 |---|---|
-| Silver / Zilver | 🟨 Sarı tonlar |
-| GGM | 🟦 Mavi tonlar |
-| Gold / Goud | 🟩 Yeşil tonlar |
-| Bronze / Brons | 🟫 Bronz tonlar |
-| (tanınmayan) | ⬜ Nötr gri |
+| En erken seviye (ilk aşamanın kaynağı / ham tablo) | 🟨 Sarı tonlar |
+| Ara seviye(ler) | 🟦 Mavi (gerekirse 🟧 turuncu, 🟪 mor ile devam eder) |
+| En son seviye (sekmenin odak/hedef tablosu) | 🟩 Yeşil tonlar |
 
-Sekmenin **odak tablosu**, kendi katmanının rengini korur — sadece daha
+Örneğin 2 aşamalı bir Excel'de (Silver→GGM, GGM→Gold) her view 3 seviye
+gösterir: ham Silver kaynağı (sarı) → GGM ara view'i (mavi) → Gold hedefi
+(yeşil). Tek aşamalı bir CSV'de (ara katman yok) sadece 2 seviye olur: ham
+kaynak (sarı) → hedef (yeşil), mavi atlanır. 4+ aşamalı zincirlerde palet
+otomatik genişler (turuncu, mor, ...).
+
+Sekmenin **odak tablosu**, kendi seviyesinin rengini korur — sadece daha
 kalın bir kenarlıkla vurgulanır (yeni bir renk eklenmez).
 
 Bu diyagram **hiçbir ek paket gerektirmez** — `st.graphviz_chart()`,

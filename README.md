@@ -231,10 +231,32 @@ güncel resmi marka kılavuzunda kesin hex kodları değişmiş olabilir.
 - `app.py` — Streamlit arayüzü (CSV + çok-sayfalı Excel + manuel kolonlar + Lineage)
 - `sql_generator.py` — CSV/Excel ayrıştırma + SQL üretim mantığı (bağımsız da kullanılabilir)
 - `lineage.py` — Aşamalar arası soy ağacı (lineage) çıkarımı ve Graphviz DOT üretimi
+- `llm_client.py` — NVIDIA NIM API istemcisi (AI syntax kontrolü + iyileştirme sohbeti, opsiyonel)
 - `template.csv` — Tek aşamalı örnek
 - `template.xlsx` — İki bağımsız warehouse'lu (GGM_Warehouse, Gold_Warehouse) iki aşamalı örnek
 - `.streamlit/config.toml` — Renk teması
 - `requirements.txt` — Bağımlılıklar
+
+## 🤖 AI-assistent (opsiyonel, NVIDIA)
+
+**:material/settings: Instellingen**-pagina'da een NVIDIA API-key (gratis via
+[build.nvidia.com](https://build.nvidia.com), begint met `nvapi-`) en een
+model-ID kunt u invoeren. Zonder key blijft de rest van de app onveranderd
+werken — deze functie is volledig optioneel.
+
+Met een key ingesteld, verschijnt onder elke gegenereerde view op de
+**:material/home: Home**-pagina:
+- **Syntax controleren**: stuurt de gegenereerde SQL naar het NVIDIA-model
+  voor een T-SQL/Fabric Warehouse (Polaris)-syntaxcontrole.
+- **Verfijningssohbet**: een klein gesprek per view waarin u vragen kunt
+  stellen of aanpassingen kunt vragen (bijv. "voeg een filter toe").
+
+**Belangrijk:** de AI-antwoorden zijn **uitsluitend adviserend** — ze passen
+de daadwerkelijk gegenereerde SQL (die deterministisch uit uw CSV/Excel
+wordt afgeleid) niet automatisch aan. Een voorgestelde wijziging moet u zelf
+overnemen in uw bron-CSV/Excel als u die permanent wilt maken. De API-key
+wordt alleen in het geheugen van uw sessie bewaard, nooit op schijf
+opgeslagen.
 
 ## Genişletme önerileri
 

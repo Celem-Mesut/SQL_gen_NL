@@ -41,6 +41,7 @@ from sql_generator import (
     render_view_sql,
 )
 from lineage import build_lineage_dot, build_lineage_index, find_terminal_views
+from llm_client import DEFAULT_MODEL, ask_followup, check_sql_syntax
 
 st.set_page_config(page_title="CSV/Excel -> T-SQL View Generator", page_icon=":material/code:", layout="wide")
 
@@ -163,12 +164,13 @@ st.markdown(
 
     /* Instellingen-kaart: instellingen niet los in een lege pagina laten
        zweven, maar in een afgebakend kader. */
-    .st-key-settings_card {
+    .st-key-settings_card, .st-key-ai_settings_card {
         border: 1px solid #82c4c5;
         border-radius: 12px;
         padding: 24px 28px;
         background: #FFFFFF;
         max-width: 640px;
+        margin-bottom: 16px;
     }
     </style>
     """,
@@ -303,6 +305,60 @@ def render_manual_columns_ui(view_key, col_map):
 # Output: bir asamayi (CSV/Excel sayfasi) ureten ve gosteren fonksiyon
 # ----------------------------------------------------------------------------
 
+def render_ai_assistant(view_key, final_sql):
+    """Bir view karti icin, opsiyonel NVIDIA AI-destegini gosterir: (1) tek
+    tikla syntax kontrolu, (2) o SQL uzerine serbest metinli iyilestirme/
+    "fine-tuning" sorulari icin kucuk bir sohbet gecmisi. API key girilmemisse
+    sadece Instellingen'e yonlendiren kisa bir not gosterir -- ozellik hic
+    zorunlu degildir. LLM'in cevaplari SADECE TAVSIYEDIR: asil uretilen SQL'i
+    otomatik olarak DEGISTIRMEZ (bkz. llm_client.py docstring'i)."""
+    api_key = st.session_state.get("nvidia_api_key", "")
+    model = st.session_state.get("nvidia_model", DEFAULT_MODEL)
+
+    st.divider()
+    st.caption(":material/smart_toy: AI-assistent (NVIDIA) -- adviserend, past de SQL hierboven niet automatisch aan")
+
+    if not api_key:
+        st.caption(
+            "Voer een NVIDIA API-key in op de **:material/settings: Instellingen**-"
+            "pagina om syntaxcontrole en verfijningsvragen te gebruiken."
+        )
+        return
+
+    check_key = f"aicheck_{view_key}"
+    if st.button("Syntax controleren", key=f"aicheck_btn_{view_key}", icon=":material/fact_check:"):
+        with st.spinner("NVIDIA-model controleert de syntax..."):
+            try:
+                st.session_state[check_key] = check_sql_syntax(api_key, model, final_sql)
+            except Exception as e:
+                st.session_state[check_key] = f":material/error: Fout bij aanroepen van NVIDIA API: {e}"
+    if check_key in st.session_state:
+        st.info(st.session_state[check_key])
+
+    hist_key = f"aichat_{view_key}"
+    if hist_key not in st.session_state:
+        st.session_state[hist_key] = []
+    for turn in st.session_state[hist_key]:
+        with st.chat_message(turn["role"]):
+            st.markdown(turn["content"])
+
+    col_q, col_send = st.columns([5, 1])
+    question = col_q.text_input(
+        "Vervolgvraag / verfijningsverzoek", key=f"aiinput_{view_key}",
+        label_visibility="collapsed",
+        placeholder="Bijv. 'Voeg een filter toe op actieve records'",
+    )
+    if col_send.button(":material/send:", key=f"aisend_{view_key}", width='stretch') and question.strip():
+        st.session_state[hist_key].append({"role": "user", "content": question})
+        with st.spinner("NVIDIA-model denkt na..."):
+            try:
+                answer = ask_followup(api_key, model, final_sql, st.session_state[hist_key][:-1], question)
+            except Exception as e:
+                answer = f":material/error: Fout bij aanroepen van NVIDIA API: {e}"
+        st.session_state[hist_key].append({"role": "assistant", "content": answer})
+        st.rerun()
+
+
 def render_stage(stage_name, df, use_create_or_alter, add_go):
     """Bir asamaya (CSV veya bir Excel sayfasi) ait tum view'leri uretir,
     her biri icin manuel-kolon formuyla birlikte gosterir. Donus: o asamada
@@ -359,6 +415,8 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
                 ), mime="text/sql",
                 key=f"dl_{view_key}", icon=":material/download:",
             )
+
+            render_ai_assistant(view_key, final_sql)
         final_sqls.append(final_sql)
 
     if final_sqls:
@@ -575,6 +633,29 @@ elif st.session_state.page == "Instellingen":
         st.caption(
             "Deze instellingen gelden voor alle fasen op de **:material/home: Home**-pagina "
             "en blijven bewaard zolang u de app niet herlaadt."
+        )
+
+    st.markdown("")
+    with st.container(key="ai_settings_card"):
+        st.markdown("**:material/smart_toy: NVIDIA AI-assistent (optioneel)**")
+        st.caption(
+            "Voor AI-syntaxcontrole en verfijningsvragen bij gegenereerde views "
+            "(zie de **:material/home: Home**-pagina, onder elke view). Een "
+            "gratis API-key is te verkrijgen via "
+            "[build.nvidia.com](https://build.nvidia.com)."
+        )
+        st.text_input(
+            "NVIDIA API-key", value=st.session_state.get("nvidia_api_key", ""),
+            key="nvidia_api_key", type="password", placeholder="nvapi-...",
+            help="Wordt alleen in het geheugen van deze sessie bewaard -- nooit "
+                 "opgeslagen op schijf of verzonden naar iets anders dan NVIDIA's API.",
+        )
+        st.text_input(
+            "Model-ID", value=st.session_state.get("nvidia_model", DEFAULT_MODEL),
+            key="nvidia_model",
+            help="Model-ID uit de catalogus op build.nvidia.com/models (deze kan "
+                 "wijzigen -- controleer de exacte spelling daar). Een coding-"
+                 "gericht model wordt aangeraden voor syntaxcontrole.",
         )
 
 

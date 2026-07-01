@@ -28,6 +28,20 @@ from openai import OpenAI
 
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
+# ----------------------------------------------------------------------------
+# DEMO-INSTELLING: vul hier rechtstreeks een API-key/model in zodat de demo-
+# gebruiker niets hoeft in te voeren op de Instellingen-pagina.
+#
+# LET OP -- ALLEEN VOOR EEN KORTSTONDIGE, GECONTROLEERDE DEMO:
+#   - Commit dit bestand NOOIT met een echte key naar een (gedeelde/publieke)
+#     Git-repository -- iedereen met leestoegang kan de key dan gebruiken.
+#   - Verwijder/deactiveer de key op build.nvidia.com zodra de demo voorbij is.
+#   - Voor een langer-lopende/gedeelde omgeving: gebruik in plaats hiervan een
+#     omgevingsvariabele (bijv. os.environ.get("NVIDIA_API_KEY", "")) of de
+#     invoervelden op de Instellingen-pagina, niet een hardcoded string.
+# ----------------------------------------------------------------------------
+DEMO_NVIDIA_API_KEY = ""  "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"
+DEMO_NVIDIA_MODEL = "mistralai/mixtral-8x7b-instruct-v0.1"
 # Varsayilan model -- build.nvidia.com/models katalogundaki guncel model
 # kimligiyle degistirilebilir (katalog zaman icinde degisebilir, bu yuzden
 # Instellingen sayfasinda serbest metin olarak duzenlenebilir tutuldu).

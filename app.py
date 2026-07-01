@@ -41,7 +41,7 @@ from sql_generator import (
     render_view_sql,
 )
 from lineage import build_lineage_dot, build_lineage_index, find_terminal_views
-from llm_client import DEFAULT_MODEL, ask_followup, check_sql_syntax
+from llm_client import DEFAULT_MODEL, DEMO_NVIDIA_API_KEY, DEMO_NVIDIA_MODEL, ask_followup, check_sql_syntax
 
 st.set_page_config(page_title="CSV/Excel -> T-SQL View Generator", page_icon=":material/code:", layout="wide")
 
@@ -54,6 +54,10 @@ if "stages" not in st.session_state:
     st.session_state.stages = {}
 if "load_info" not in st.session_state:
     st.session_state.load_info = None
+if "nvidia_api_key" not in st.session_state:
+    st.session_state.nvidia_api_key = DEMO_NVIDIA_API_KEY
+if "nvidia_model" not in st.session_state:
+    st.session_state.nvidia_model = DEMO_NVIDIA_MODEL or DEFAULT_MODEL
 
 st.markdown(
     """

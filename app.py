@@ -60,6 +60,63 @@ if "load_info" not in st.session_state:
 st.markdown(
     """
     <style>
+    /* -------------------------------------------------------------------
+       Tipografi: Space Grotesk (basliklar) + Inter (govde) + JetBrains
+       Mono (kod). Streamlit'in sistem varsayilan fontu yerine bilincli
+       bir font ciftlemesi -- veri muhendisligi/SQL uretim aracina uygun,
+       teknik ama okunakli bir kimlik.
+       ------------------------------------------------------------------- */
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+    html, body, [class*="css"], [data-testid="stAppViewContainer"] {
+        font-family: 'Inter', -apple-system, sans-serif;
+    }
+    h1, h2, h3, [data-testid="stMarkdownContainer"] h1,
+    [data-testid="stMarkdownContainer"] h2, [data-testid="stMarkdownContainer"] h3,
+    [data-testid="stSidebar"] h3 {
+        font-family: 'Space Grotesk', sans-serif !important;
+        letter-spacing: -0.01em;
+        font-weight: 600 !important;
+    }
+    code, pre, [data-testid="stCodeBlock"] *, .stCodeBlock * {
+        font-family: 'JetBrains Mono', 'Courier New', monospace !important;
+    }
+
+    /* -------------------------------------------------------------------
+       Streamlit imzasini gizle (footer + Deploy butonu) -- kendi markanla
+       cikan bir arac gibi gorunsun, "made with streamlit" izi kalmasin.
+       ------------------------------------------------------------------- */
+    footer { visibility: hidden; }
+    [data-testid="stToolbar"] [data-testid="stAppDeployButton"] { display: none; }
+    [data-testid="stDecoration"] { background-image: linear-gradient(90deg, #C15F3C, #E8A87C); }
+
+    /* -------------------------------------------------------------------
+       Kart stili: expander ve metric kutularina ince kenarlik + hafif
+       golge -- duz/basit degil, katmanli/profesyonel gorunum.
+       ------------------------------------------------------------------- */
+    [data-testid="stExpander"] {
+        border: 1px solid #EAE7DD !important;
+        border-radius: 10px !important;
+        box-shadow: 0 1px 3px rgba(38, 38, 36, 0.06);
+        overflow: hidden;
+    }
+    [data-testid="stExpander"] summary {
+        font-family: 'Space Grotesk', sans-serif;
+        font-weight: 500;
+    }
+    div[data-testid="stMetric"] {
+        background: #F4F3EE;
+        border: 1px solid #EAE7DD;
+        border-radius: 8px;
+        padding: 14px 18px;
+    }
+    [data-testid="stMetricLabel"] { font-family: 'Inter', sans-serif; opacity: 0.75; }
+    [data-testid="stMetricValue"] { font-family: 'Space Grotesk', sans-serif; }
+
+    /* -------------------------------------------------------------------
+       Sidebar: baslik altina ince ayrac, buton gecisleri (mevcut).
+       ------------------------------------------------------------------- */
+    [data-testid="stSidebar"] { border-right: 1px solid #EAE7DD; }
     [data-testid="stSidebar"] button p {
         transition: font-weight 0.15s ease, opacity 0.15s ease;
     }
@@ -225,7 +282,7 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
     col_c.metric("Unieke brontabellen", df[["source_schema", "source_table"]].drop_duplicates().shape[0])
 
     final_sqls = []
-    for (target_schema, target_table), item in results.items():
+    for idx, ((target_schema, target_table), item) in enumerate(results.items()):
         view_data = item["view_data"]
         view_key = f"{stage_name}::{target_schema}::{target_table}"
         col_map = {c["target_column"]: c["expr"] for c in view_data["columns"]}
@@ -235,7 +292,10 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
             title += f"  →  {view_data['target_system']}"
         title += f"  —  {item['column_count']} kolommen"
 
-        with st.expander(title, expanded=False):
+        # Eerste view standaard open -- gebruiker ziet direct dat er SQL-
+        # inhoud en een "kolom toevoegen" formulier achter de titel zit,
+        # zonder eerst te hoeven klikken om dat te ontdekken.
+        with st.expander(title, expanded=(idx == 0)):
             st.caption(":material/extension: Handmatig toegevoegde kolommen (bijv. Business Key, controlekolom, ...)")
             extra_columns = render_manual_columns_ui(view_key, col_map)
 
@@ -456,6 +516,23 @@ elif st.session_state.page == "Lineage":
         "bijv. Silver → GGM → Gold. Tussenliggende views (bijv. GGM) krijgen "
         "geen eigen tabblad, omdat hun herkomst al zichtbaar is binnen het "
         "diagram van de eindtabel die ze voedt."
+    )
+    st.markdown(
+        """
+        <div style="display:flex; gap:20px; align-items:center; margin:4px 0 18px 0;
+                    font-size:0.85rem; color:#262624;">
+            <span><span style="display:inline-block; width:11px; height:11px;
+                border-radius:3px; background:#F6E2A8; border:1px solid #C9A227;
+                margin-right:6px;"></span>Bronlaag (vroegste fase)</span>
+            <span><span style="display:inline-block; width:11px; height:11px;
+                border-radius:3px; background:#BFD7EF; border:1px solid #5B85B8;
+                margin-right:6px;"></span>Tussenlaag</span>
+            <span><span style="display:inline-block; width:11px; height:11px;
+                border-radius:3px; background:#C9E4D3; border:1px solid #5A9B76;
+                margin-right:6px;"></span>Doellaag (eindtabel)</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
 
     if not st.session_state.stages:

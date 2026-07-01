@@ -8,11 +8,10 @@ her view icin bir veya daha fazla MANUEL kolon (Business Key, kontrol
 kolonu, vb.) ekleyin ve sonuclari indirin.
 
 Sayfalar (sol kenar cubugundaki butonlarla gezilir):
-    Home         -> dosya yukleme + aciklamalar
-    Output       -> uretilen view'ler (cok-asamali Excel'de alt-sekmeler)
-    Lineage      -> her tablo icin, tum asamalar arasi soy agaci diyagrami
-    Instellingen -> CREATE OR ALTER VIEW / GO ayarlari
-    Sjablonen    -> sablon indirme + onizleme
+    Home                 -> dosya yukleme + hemen altinda uretilen view'ler
+    Lineage              -> her tablo icin, tum asamalar arasi soy agaci diyagrami
+    Instellingen         -> CREATE OR ALTER VIEW / GO ayarlari
+    Documentatie & hulp  -> sablon indirme + SSS
 
 NOT: Kullanici arayuzu (butonlar, basliklar, hata mesajlari) TAMAMEN
 HOLLANDACA'dir -- bu, programin son kullanicisi icindir. Bu Python
@@ -30,7 +29,6 @@ Calistirmak icin:
 
 from datetime import datetime
 
-import pandas as pd
 import streamlit as st
 
 from sql_generator import (
@@ -88,12 +86,26 @@ st.markdown(
     [data-testid="stToolbar"] [data-testid="stAppDeployButton"] { display: none; }
 
     /* -------------------------------------------------------------------
-       Cerceve sistemi -- TEK notr renk (#D6D2C4, temanin borderColor'u),
-       turuncu (primaryColor) SADECE birincil eylem/aktif durum icin.
-       Iki rakip vurgu rengi yok -- tutarli, sakin gorunum.
+       Palet -- her renge NET bir rol verildi, rastgele dagilim yok:
+         #fb8b24 (princeton-orange) -> primaryColor, birincil eylem
+         #0f4c5c (dark-teal)        -> sidebar (ayri navigasyon zonu)
+         #5f0f40 (crimson-violet)   -> baslik tipografisi (h1/h2/h3)
+         #e36414 (autumn-leaf)      -> yapisal cerceveler (kart/metric)
+         #9a031e (deep-crimson)     -> yikici eylemler (verwijderen)
        ------------------------------------------------------------------- */
+    h1, h2, h3, [data-testid="stMarkdownContainer"] h1,
+    [data-testid="stMarkdownContainer"] h2, [data-testid="stMarkdownContainer"] h3 {
+        font-family: 'Space Grotesk', sans-serif !important;
+        letter-spacing: -0.01em;
+        font-weight: 600 !important;
+        color: #5f0f40 !important;
+    }
+    code, pre, [data-testid="stCodeBlock"] *, .stCodeBlock * {
+        font-family: 'JetBrains Mono', 'Courier New', monospace !important;
+    }
+
     [data-testid="stExpander"] {
-        border: 1px solid #D6D2C4 !important;
+        border: 1px solid #e36414 !important;
         border-radius: 10px !important;
         box-shadow: 0 1px 3px rgba(38, 38, 36, 0.05);
         overflow: hidden;
@@ -104,17 +116,16 @@ st.markdown(
     }
     div[data-testid="stMetric"] {
         background: #FFFFFF;
-        border: 1px solid #D6D2C4;
+        border: 1px solid #e36414;
         border-radius: 8px;
         padding: 14px 18px;
     }
     [data-testid="stMetricLabel"] { font-family: 'Inter', sans-serif; opacity: 0.7; }
     [data-testid="stMetricValue"] { font-family: 'Space Grotesk', sans-serif; }
 
-    /* -------------------------------------------------------------------
-       Fase-/tab-schakelaars (Output + Lineage): aktif = turuncu dolgu,
-       pasif = notr cerceve (tema border rengi, rastgele renk degil).
-       ------------------------------------------------------------------- */
+    /* Fase-/tab-schakelaars (Home-output + Lineage): actief = princeton-orange
+       (primaryColor via Streamlit's eigen 'primary' knop-stijl), inactief =
+       autumn-leaf omkaderd. */
     [class*="_stage_nav"] button {
         font-size: 1.05rem !important;
         font-family: 'Space Grotesk', sans-serif !important;
@@ -123,13 +134,22 @@ st.markdown(
         border-radius: 10px !important;
     }
     [class*="_stage_nav"] button[kind="secondary"] {
-        border-color: #D6D2C4 !important;
+        border-color: #e36414 !important;
     }
 
-    /* -------------------------------------------------------------------
-       Sidebar: notr ayrac.
-       ------------------------------------------------------------------- */
-    [data-testid="stSidebar"] { border-right: 1px solid #D6D2C4; }
+    /* Sidebar: dark-teal achtergrond -- eigen navigatiezone, duidelijk
+       gescheiden van de crème inhoud. Tekst/iconen worden licht. */
+    [data-testid="stSidebar"] {
+        background: #0f4c5c;
+        border-right: none;
+    }
+    [data-testid="stSidebar"] * { color: #F1EDE6 !important; }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 { color: #F1EDE6 !important; }
+    [data-testid="stSidebar"] hr { border-color: rgba(241, 237, 230, 0.25); }
+    [data-testid="stSidebar"] button[kind="secondary"] {
+        background: rgba(241, 237, 230, 0.08);
+        border-color: rgba(241, 237, 230, 0.3);
+    }
     [data-testid="stSidebar"] button p {
         transition: font-weight 0.15s ease, opacity 0.15s ease;
     }
@@ -137,42 +157,31 @@ st.markdown(
         font-weight: 700 !important;
     }
     [data-testid="stSidebar"] button:active p {
-        opacity: 0.6;
+        opacity: 0.7;
     }
 
-    /* -------------------------------------------------------------------
-       Sablon/veri onizleme tablolari (Sjablonen) -- diger kartlarla ayni
-       cerceve dilini kullansin, ham/cerceve olarak dokulmus gorunmesin.
-       ------------------------------------------------------------------- */
+    /* Sjabloon-onizleme tabelleri zijn uitgeschakeld -- deze regel blijft
+       staan voor het geval een dataframe elders nog getoond wordt. */
     [data-testid="stDataFrame"] {
-        border: 1px solid #D6D2C4 !important;
+        border: 1px solid #e36414 !important;
         border-radius: 8px !important;
         overflow: hidden;
     }
 
-    /* -------------------------------------------------------------------
-       "Documentatie/hulp" bolgesi (Home): ikincil/muted bir zon olarak
-       ayirt edilsin -- birincil eylemle (upload) ayni agirlikta gorunmesin.
-       ------------------------------------------------------------------- */
-    .st-key-help_section {
-        background: #EAE7DD;
-        border-radius: 12px;
-        padding: 20px 20px 4px 20px;
-    }
-    .st-key-help_section [data-testid="stExpander"] {
-        background: #F4F3EE;
-    }
-
-    /* -------------------------------------------------------------------
-       Instellingen-kaart: instellingen niet los in een lege pagina laten
-       zweven, maar in een afgebakend kader.
-       ------------------------------------------------------------------- */
+    /* Instellingen-kaart: instellingen niet los in een lege pagina laten
+       zweven, maar in een afgebakend kader. */
     .st-key-settings_card {
-        border: 1px solid #D6D2C4;
+        border: 1px solid #e36414;
         border-radius: 12px;
         padding: 24px 28px;
         background: #FFFFFF;
         max-width: 640px;
+    }
+
+    /* Verwijder-knoppen (destructieve actie) -- deep-crimson. */
+    button[title*="Verwijder"], .st-key-delete_btn button {
+        border-color: #9a031e !important;
+        color: #9a031e !important;
     }
     </style>
     """,
@@ -181,10 +190,9 @@ st.markdown(
 
 NAV_PAGES = [
     ("Home", ":material/home:"),
-    ("Output", ":material/sql:"),
     ("Lineage", ":material/hub:"),
     ("Instellingen", ":material/settings:"),
-    ("Sjablonen", ":material/csv:"),
+    ("Documentatie & hulp", ":material/menu_book:"),
 ]
 
 
@@ -428,160 +436,70 @@ if st.session_state.page == "Home":
 
     if st.session_state.load_info:
         st.success(st.session_state.load_info)
-        st.info("Ga naar de **:material/sql: Output**-pagina (linkerbalk) om de gegenereerde views te bekijken.")
     else:
-        st.info("Upload een bestand om te beginnen, of download een sjabloon via de **:material/csv: Sjablonen**-pagina.")
+        st.info("Upload een bestand om te beginnen, of download een sjabloon via de "
+                "**:material/menu_book: Documentatie & hulp**-pagina.")
 
-    st.divider()
+    if st.session_state.stages:
+        st.divider()
+        st.markdown("##### :material/sql: Gegenereerde views")
+        with st.container(key="output_page"):
+            use_create_or_alter = st.session_state.get("opt_create_or_alter", True)
+            add_go = st.session_state.get("opt_add_go", True)
 
-    st.markdown("##### :material/menu_book: Documentatie & hulp")
-    with st.container(key="help_section"):
-        with st.expander("CSV/Excel-kolombeschrijvingen"):
-            st.markdown(
-                "**Kolomvolgorde:** eerst bron (`source_*`), dan doel (`target_*`).\n\n"
-                "**Verplicht in elke rij:**\n"
-                "- `source_schema`, `source_table`, `source_column`\n"
-                "- `target_schema`, `target_table`\n\n"
-                "**target_column + target_datatype:** Worden samen opgegeven (normale "
-                "SELECT-kolom) **of** beide leeg gelaten — in dat geval is de rij "
-                "*uitsluitend een filter* (voegt geen kolom toe aan SELECT, alleen "
-                "`where_condition` wordt toegepast; in dat geval is `where_condition` "
-                "verplicht).\n\n"
-                "**Optionele kolommen:**\n"
-                "- `source_system`: Voor cross-warehouse/lakehouse QUERIES (3-delige "
-                "naamgeving, FROM/JOIN-kant). Vul hier de naam van het andere item in "
-                "wanneer u verwijst naar een ander Warehouse/Lakehouse (bijv. als de "
-                "GGM-laag in een ander Warehouse staat dan Gold). Leeg laten als het "
-                "in hetzelfde warehouse staat.\n"
-                "- `target_system`: Documenteert tot WELK warehouse/lakehouse deze view "
-                "behoort. Indien ingevuld wordt een ECHTE 3-delige naamgeving gebruikt in "
-                "`CREATE VIEW`: `[target_system].[target_schema].[view_name]` — nodig om "
-                "warehouses met gelijknamige schema's te onderscheiden. Indien leeg blijft "
-                "de eenvoudige 2-delige vorm `[target_schema].[view_name]` behouden. Moet "
-                "**gelijk** zijn voor alle rijen binnen één `target_table`-groep (of "
-                "allemaal leeg).\n"
-                "- `source_datatype`: Indien leeg of gelijk aan target_datatype wordt "
-                "geen CAST toegevoegd; indien verschillend wordt automatisch `CAST(...)` "
-                "toegepast.\n"
-                "- `transformation`: Aangepaste SQL-expressie. De placeholder `{src}` "
-                "wordt vervangen door de bronkolomverwijzing (bijv. `UPPER({src})`, "
-                "`CASE WHEN {src} < 18 THEN ... END`).\n"
-                "- `where_condition`: Wordt toegevoegd aan de WHERE-voorwaarde van de "
-                "view. `{src}` wordt vervangen door de eigen bronkolom van die rij. Als "
-                "dit op meerdere rijen binnen dezelfde `target_table` wordt opgegeven, "
-                "worden ze allemaal met **AND** gecombineerd.\n"
-                "- `join_type` / `join_condition`: Als binnen één `target_table` "
-                "meerdere brontabellen worden gebruikt, moeten deze op de **eerste "
-                "rij** van die tabel worden opgegeven (`INNER` / `LEFT` / `RIGHT` / `FULL`)."
-            )
+            stages = st.session_state.stages
+            multi_stage = len(stages) > 1
+            all_final_sqls = []
 
-        with st.expander(":material/link_2: Alias-/tabelprefixregel"):
-            st.markdown(
-                "Als een view **uit slechts één brontabel** wordt gevoed (geen JOIN), "
-                "wordt in de SELECT-lijst **geen tabelprefix** voor kolomnamen gezet — "
-                "alleen `[Kolom]`. Bij meerdere brontabellen (JOIN) wordt het formaat "
-                "`[Alias].[Kolom]` gebruikt, omdat anders onduidelijk is uit welke "
-                "tabel een kolom komt. Deze regel wordt automatisch toegepast en is "
-                "niet instelbaar."
-            )
+            if "output_stage" not in st.session_state or st.session_state.output_stage not in stages:
+                st.session_state.output_stage = next(iter(stages))
+            if "output_all_sqls" not in st.session_state:
+                st.session_state.output_all_sqls = {}
 
-        with st.expander(":material/extension: Wat zijn handmatige kolommen?"):
-            st.markdown(
-                "Op de **:material/sql: Output**-pagina kunt u, onder elke view, één of meer "
-                "**handmatig samengestelde kolommen** toevoegen die niet in de bron-/"
-                "doeltabellen voorkomen — bijvoorbeeld een Business Key (om de "
-                "uniciteit van records te controleren), een controlekolom, of iets "
-                "anders. Wordt **niet** vanuit CSV/Excel toegevoegd.\n\n"
-                "Per kolom voert u een naam en de onderdelen in, gescheiden door "
-                "komma's, in de gewenste volgorde:\n"
-                "- Voor **vaste tekst** gebruikt u aanhalingstekens: `\"OOST\"`\n"
-                "- Voor **een kolom** typt u de doelkolomnaam exact, zonder "
-                "aanhalingstekens: `PersoonID` — of gebruik het keuzemenu "
-                "**'Kolom toevoegen'** om een bestaande kolom met één klik toe te "
-                "voegen aan de onderdelen.\n\n"
-                "Voorbeeldinvoer: `\"OOST\", PersoonID, Geboortedatum` →\n\n"
-                "`CAST(CONCAT('OOST', ' | ', [PersoonID], ' | ', [Geboortedatum]) "
-                "AS VARCHAR(255))`\n\n"
-                "Elke kolom wordt **vooraan** in de SELECT-lijst toegevoegd, in de "
-                "volgorde waarin u ze heeft aangemaakt; u kunt zoveel kolommen "
-                "toevoegen als u wilt, en elk afzonderlijk weer verwijderen."
-            )
+            if multi_stage:
+                with st.container(key="output_stage_nav"):
+                    btn_cols = st.columns(len(stages))
+                    for col, stage_name in zip(btn_cols, stages.keys()):
+                        active = st.session_state.output_stage == stage_name
+                        if col.button(
+                            f"{_stage_icon(stage_name)}  {stage_name}",
+                            key=f"output_stage_btn_{stage_name}",
+                            type="primary" if active else "secondary",
+                            width='stretch',
+                        ):
+                            st.session_state.output_stage = stage_name
+                            st.rerun()
+                st.divider()
 
-        with st.expander(":material/hub: Wat toont de Lineage-pagina?"):
-            st.markdown(
-                "De **:material/hub: Lineage**-pagina toont voor elke gegenereerde "
-                "view een diagram met de volledige herkomst over alle fasen heen "
-                "(bijv. Silver → GGM → Gold). Dit wordt automatisch afgeleid uit de "
-                "`source_table`-verwijzingen -- geen extra configuratie nodig."
-            )
+                selected_stage = st.session_state.output_stage
+                stage_sqls = render_stage(selected_stage, stages[selected_stage], use_create_or_alter, add_go)
+                st.session_state.output_all_sqls[selected_stage] = stage_sqls
 
+                # "Download alle fasen" moet ALLE fasen bevatten, ook fasen die de
+                # gebruiker deze sessie nog niet heeft bezocht (sinds we nu, anders
+                # dan bij tabs, maar 1 fase tegelijk renderen) -- daarom worden ze
+                # hier stil (zonder UI) meegegenereerd als ze nog niet bezocht zijn.
+                for stage_name, stage_df in stages.items():
+                    if stage_name not in st.session_state.output_all_sqls:
+                        results, _ = generate_all_views(stage_df, use_create_or_alter=use_create_or_alter, add_go=add_go)
+                        st.session_state.output_all_sqls[stage_name] = [item["sql"] for item in results.values()]
+                all_final_sqls = [
+                    sql for name in stages for sql in st.session_state.output_all_sqls.get(name, [])
+                ]
+            else:
+                stage_name, df = next(iter(stages.items()))
+                all_final_sqls = render_stage(stage_name, df, use_create_or_alter, add_go)
 
-# ============================================================================
-# PAGINA: Output
-# ============================================================================
-elif st.session_state.page == "Output":
-    st.title(":material/sql: Output")
+            if multi_stage and all_final_sqls:
+                st.divider()
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                st.download_button(
+                    "Download ALLE views van ALLE fasen als één SQL-bestand",
+                    data="\n\n".join(all_final_sqls).encode("utf-8"),
+                    file_name=f"all_stages_{timestamp}.sql", mime="text/sql",
+                    type="primary", icon=":material/download:",
+                )
 
-    if not st.session_state.stages:
-        st.info("Upload eerst een bestand op de **:material/home: Home**-pagina.")
-        st.stop()
-
-    with st.container(key="output_page"):
-        use_create_or_alter = st.session_state.get("opt_create_or_alter", True)
-        add_go = st.session_state.get("opt_add_go", True)
-
-        stages = st.session_state.stages
-        multi_stage = len(stages) > 1
-        all_final_sqls = []
-
-        if "output_stage" not in st.session_state or st.session_state.output_stage not in stages:
-            st.session_state.output_stage = next(iter(stages))
-        if "output_all_sqls" not in st.session_state:
-            st.session_state.output_all_sqls = {}
-
-        if multi_stage:
-            with st.container(key="output_stage_nav"):
-                btn_cols = st.columns(len(stages))
-                for col, stage_name in zip(btn_cols, stages.keys()):
-                    active = st.session_state.output_stage == stage_name
-                    if col.button(
-                        f"{_stage_icon(stage_name)}  {stage_name}",
-                        key=f"output_stage_btn_{stage_name}",
-                        type="primary" if active else "secondary",
-                        width='stretch',
-                    ):
-                        st.session_state.output_stage = stage_name
-                        st.rerun()
-            st.divider()
-
-            selected_stage = st.session_state.output_stage
-            stage_sqls = render_stage(selected_stage, stages[selected_stage], use_create_or_alter, add_go)
-            st.session_state.output_all_sqls[selected_stage] = stage_sqls
-
-            # "Download alle fasen" moet ALLE fasen bevatten, ook fasen die de
-            # gebruiker deze sessie nog niet heeft bezocht (sinds we nu, anders
-            # dan bij tabs, maar 1 fase tegelijk renderen) -- daarom worden ze
-            # hier stil (zonder UI) meegegenereerd als ze nog niet bezocht zijn.
-            for stage_name, stage_df in stages.items():
-                if stage_name not in st.session_state.output_all_sqls:
-                    results, _ = generate_all_views(stage_df, use_create_or_alter=use_create_or_alter, add_go=add_go)
-                    st.session_state.output_all_sqls[stage_name] = [item["sql"] for item in results.values()]
-            all_final_sqls = [
-                sql for name in stages for sql in st.session_state.output_all_sqls.get(name, [])
-            ]
-        else:
-            stage_name, df = next(iter(stages.items()))
-            all_final_sqls = render_stage(stage_name, df, use_create_or_alter, add_go)
-
-        if multi_stage and all_final_sqls:
-            st.divider()
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            st.download_button(
-                "Download ALLE views van ALLE fasen als één SQL-bestand",
-                data="\n\n".join(all_final_sqls).encode("utf-8"),
-                file_name=f"all_stages_{timestamp}.sql", mime="text/sql",
-                type="primary", icon=":material/download:",
-            )
 
 
 # ============================================================================
@@ -668,21 +586,19 @@ elif st.session_state.page == "Instellingen":
                  "één keer uit te voeren.",
         )
         st.caption(
-            "Deze instellingen gelden voor alle fasen op de **:material/sql: Output**-pagina "
+            "Deze instellingen gelden voor alle fasen op de **:material/home: Home**-pagina "
             "en blijven bewaard zolang u de app niet herlaadt."
         )
 
 
 # ============================================================================
-# PAGINA: Sjablonen
+# PAGINA: Documentatie & hulp
 # ============================================================================
-elif st.session_state.page == "Sjablonen":
-    st.title(":material/csv: Sjablonen")
-    st.caption(
-        "Download het CSV-sjabloon voor één fase, of het Excel-sjabloon voor "
-        "meerdere fasen (bijv. Silver→GGM→Gold)."
-    )
+elif st.session_state.page == "Documentatie & hulp":
+    st.title(":material/menu_book: Documentatie & hulp")
+    st.caption("Download een sjabloon om te starten, of lees de veelgestelde vragen hieronder.")
 
+    st.markdown("##### :material/download: Sjablonen downloaden")
     col_t1, col_t2 = st.columns(2)
     try:
         with open("template.csv", "rb") as f:
@@ -691,6 +607,7 @@ elif st.session_state.page == "Sjablonen":
             "CSV-sjabloon", data=csv_bytes, file_name="csv2sql_template.csv",
             mime="text/csv", width='stretch', icon=":material/download:",
         )
+        col_t1.caption(":material/info_i: Eén fase -- alle kolommen in één plat bestand.")
     except FileNotFoundError:
         col_t1.warning("template.csv ontbreekt")
     try:
@@ -701,24 +618,87 @@ elif st.session_state.page == "Sjablonen":
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             width='stretch', icon=":material/download:",
         )
+        col_t2.caption(":material/info_i: Meerdere fasen als aparte bladen, bijv. Silver→GGM→Gold.")
     except FileNotFoundError:
         col_t2.warning("template.xlsx ontbreekt")
 
     st.divider()
-    st.subheader("Inhoud van de sjablonen")
+    st.markdown("##### :material/quiz: Veelgestelde vragen")
+    with st.expander("CSV/Excel-kolombeschrijvingen"):
+        st.markdown(
+            "**Kolomvolgorde:** eerst bron (`source_*`), dan doel (`target_*`).\n\n"
+            "**Verplicht in elke rij:**\n"
+            "- `source_schema`, `source_table`, `source_column`\n"
+            "- `target_schema`, `target_table`\n\n"
+            "**target_column + target_datatype:** Worden samen opgegeven (normale "
+            "SELECT-kolom) **of** beide leeg gelaten — in dat geval is de rij "
+            "*uitsluitend een filter* (voegt geen kolom toe aan SELECT, alleen "
+            "`where_condition` wordt toegepast; in dat geval is `where_condition` "
+            "verplicht).\n\n"
+            "**Optionele kolommen:**\n"
+            "- `source_system`: Voor cross-warehouse/lakehouse QUERIES (3-delige "
+            "naamgeving, FROM/JOIN-kant). Vul hier de naam van het andere item in "
+            "wanneer u verwijst naar een ander Warehouse/Lakehouse (bijv. als de "
+            "GGM-laag in een ander Warehouse staat dan Gold). Leeg laten als het "
+            "in hetzelfde warehouse staat.\n"
+            "- `target_system`: Documenteert tot WELK warehouse/lakehouse deze view "
+            "behoort. Indien ingevuld wordt een ECHTE 3-delige naamgeving gebruikt in "
+            "`CREATE VIEW`: `[target_system].[target_schema].[view_name]` — nodig om "
+            "warehouses met gelijknamige schema's te onderscheiden. Indien leeg blijft "
+            "de eenvoudige 2-delige vorm `[target_schema].[view_name]` behouden. Moet "
+            "**gelijk** zijn voor alle rijen binnen één `target_table`-groep (of "
+            "allemaal leeg).\n"
+            "- `source_datatype`: Indien leeg of gelijk aan target_datatype wordt "
+            "geen CAST toegevoegd; indien verschillend wordt automatisch `CAST(...)` "
+            "toegepast.\n"
+            "- `transformation`: Aangepaste SQL-expressie. De placeholder `{src}` "
+            "wordt vervangen door de bronkolomverwijzing (bijv. `UPPER({src})`, "
+            "`CASE WHEN {src} < 18 THEN ... END`).\n"
+            "- `where_condition`: Wordt toegevoegd aan de WHERE-voorwaarde van de "
+            "view. `{src}` wordt vervangen door de eigen bronkolom van die rij. Als "
+            "dit op meerdere rijen binnen dezelfde `target_table` wordt opgegeven, "
+            "worden ze allemaal met **AND** gecombineerd.\n"
+            "- `join_type` / `join_condition`: Als binnen één `target_table` "
+            "meerdere brontabellen worden gebruikt, moeten deze op de **eerste "
+            "rij** van die tabel worden opgegeven (`INNER` / `LEFT` / `RIGHT` / `FULL`)."
+        )
 
-    try:
-        st.markdown("**CSV-sjabloon:**")
-        st.dataframe(pd.read_csv("template.csv"), width='stretch')
-    except FileNotFoundError:
-        st.warning("template.csv ontbreekt")
+    with st.expander(":material/link_2: Alias-/tabelprefixregel"):
+        st.markdown(
+            "Als een view **uit slechts één brontabel** wordt gevoed (geen JOIN), "
+            "wordt in de SELECT-lijst **geen tabelprefix** voor kolomnamen gezet — "
+            "alleen `[Kolom]`. Bij meerdere brontabellen (JOIN) wordt het formaat "
+            "`[Alias].[Kolom]` gebruikt, omdat anders onduidelijk is uit welke "
+            "tabel een kolom komt. Deze regel wordt automatisch toegepast en is "
+            "niet instelbaar."
+        )
 
-    try:
-        st.markdown("**Excel-sjabloon:**")
-        xls = pd.ExcelFile("template.xlsx")
-        sheet_tabs = st.tabs([f"{_stage_icon(s)} {s}" for s in xls.sheet_names])
-        for sheet_tab, sheet_name in zip(sheet_tabs, xls.sheet_names):
-            with sheet_tab:
-                st.dataframe(xls.parse(sheet_name), width='stretch')
-    except FileNotFoundError:
-        st.warning("template.xlsx ontbreekt")
+    with st.expander(":material/extension: Wat zijn handmatige kolommen?"):
+        st.markdown(
+            "Op de **:material/home: Home**-pagina kunt u, onder elke view, één of meer "
+            "**handmatig samengestelde kolommen** toevoegen die niet in de bron-/"
+            "doeltabellen voorkomen — bijvoorbeeld een Business Key (om de "
+            "uniciteit van records te controleren), een controlekolom, of iets "
+            "anders. Wordt **niet** vanuit CSV/Excel toegevoegd.\n\n"
+            "Per kolom voert u een naam en de onderdelen in, gescheiden door "
+            "komma's, in de gewenste volgorde:\n"
+            "- Voor **vaste tekst** gebruikt u aanhalingstekens: `\"OOST\"`\n"
+            "- Voor **een kolom** typt u de doelkolomnaam exact, zonder "
+            "aanhalingstekens: `PersoonID` — of gebruik het keuzemenu "
+            "**'Kolom toevoegen'** om een bestaande kolom met één klik toe te "
+            "voegen aan de onderdelen.\n\n"
+            "Voorbeeldinvoer: `\"OOST\", PersoonID, Geboortedatum` →\n\n"
+            "`CAST(CONCAT('OOST', ' | ', [PersoonID], ' | ', [Geboortedatum]) "
+            "AS VARCHAR(255))`\n\n"
+            "Elke kolom wordt **vooraan** in de SELECT-lijst toegevoegd, in de "
+            "volgorde waarin u ze heeft aangemaakt; u kunt zoveel kolommen "
+            "toevoegen als u wilt, en elk afzonderlijk weer verwijderen."
+        )
+
+    with st.expander(":material/hub: Wat toont de Lineage-pagina?"):
+        st.markdown(
+            "De **:material/hub: Lineage**-pagina toont voor elke gegenereerde "
+            "view een diagram met de volledige herkomst over alle fasen heen "
+            "(bijv. Silver → GGM → Gold). Dit wordt automatisch afgeleid uit de "
+            "`source_table`-verwijzingen -- geen extra configuratie nodig."
+        )

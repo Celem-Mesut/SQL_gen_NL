@@ -34,7 +34,6 @@ import pandas as pd
 import streamlit as st
 
 from sql_generator import (
-    ALL_COLUMNS,
     ValidationError,
     generate_all_views,
     load_mapping_csv,
@@ -92,7 +91,8 @@ st.markdown(
 
     /* -------------------------------------------------------------------
        Kart stili: expander ve metric kutularina ince kenarlik + hafif
-       golge -- duz/basit degil, katmanli/profesyonel gorunum.
+       golge -- duz/basit degil, katmanli/profesyonel gorunum. (Genel/
+       tum sayfalar icin notr renk.)
        ------------------------------------------------------------------- */
     [data-testid="stExpander"] {
         border: 1px solid #EAE7DD !important;
@@ -112,6 +112,29 @@ st.markdown(
     }
     [data-testid="stMetricLabel"] { font-family: 'Inter', sans-serif; opacity: 0.75; }
     [data-testid="stMetricValue"] { font-family: 'Space Grotesk', sans-serif; }
+
+    /* -------------------------------------------------------------------
+       Output-pagina: koyu mor, belirgin cerceveler -- hem fase-knoppen
+       hem view-kaartjes (expanders/metrics) alleen op deze pagina.
+       ------------------------------------------------------------------- */
+    .st-key-output_page [data-testid="stExpander"] {
+        border: 1.5px solid #4B2E68 !important;
+    }
+    .st-key-output_page div[data-testid="stMetric"] {
+        border: 1.5px solid #4B2E68 !important;
+    }
+    .st-key-output_stage_nav button {
+        font-size: 1.05rem !important;
+        font-family: 'Space Grotesk', sans-serif !important;
+        font-weight: 600 !important;
+        padding: 0.9rem 1.2rem !important;
+        border-width: 2px !important;
+        border-color: #4B2E68 !important;
+        border-radius: 10px !important;
+    }
+    .st-key-output_stage_nav button[kind="secondary"] {
+        color: #4B2E68 !important;
+    }
 
     /* -------------------------------------------------------------------
        Sidebar: baslik altina ince ayrac, buton gecisleri (mevcut).
@@ -474,35 +497,62 @@ elif st.session_state.page == "Output":
         st.info("Upload eerst een bestand op de **:material/home: Home**-pagina.")
         st.stop()
 
-    use_create_or_alter = st.session_state.get("opt_create_or_alter", True)
-    add_go = st.session_state.get("opt_add_go", True)
+    with st.container(key="output_page"):
+        use_create_or_alter = st.session_state.get("opt_create_or_alter", True)
+        add_go = st.session_state.get("opt_add_go", True)
 
-    stages = st.session_state.stages
-    multi_stage = len(stages) > 1
-    all_final_sqls = []
+        stages = st.session_state.stages
+        multi_stage = len(stages) > 1
+        all_final_sqls = []
 
-    if multi_stage:
-        tabs = st.tabs([f"{_stage_icon(name)} {name}" for name in stages.keys()])
-    else:
-        tabs = [st.container()]
+        if "output_stage" not in st.session_state or st.session_state.output_stage not in stages:
+            st.session_state.output_stage = next(iter(stages))
+        if "output_all_sqls" not in st.session_state:
+            st.session_state.output_all_sqls = {}
 
-    for tab, (stage_name, df) in zip(tabs, stages.items()):
-        with tab:
-            with st.expander(f":material/info_i: Voorbeeld van de gegevens in '{stage_name}'", expanded=False):
-                st.dataframe(df[ALL_COLUMNS], width='stretch')
+        if multi_stage:
+            with st.container(key="output_stage_nav"):
+                btn_cols = st.columns(len(stages))
+                for col, stage_name in zip(btn_cols, stages.keys()):
+                    active = st.session_state.output_stage == stage_name
+                    if col.button(
+                        f"{_stage_icon(stage_name)}  {stage_name}",
+                        key=f"output_stage_btn_{stage_name}",
+                        type="primary" if active else "secondary",
+                        width='stretch',
+                    ):
+                        st.session_state.output_stage = stage_name
+                        st.rerun()
+            st.divider()
 
-            stage_sqls = render_stage(stage_name, df, use_create_or_alter, add_go)
-            all_final_sqls.extend(stage_sqls)
+            selected_stage = st.session_state.output_stage
+            stage_sqls = render_stage(selected_stage, stages[selected_stage], use_create_or_alter, add_go)
+            st.session_state.output_all_sqls[selected_stage] = stage_sqls
 
-    if multi_stage and all_final_sqls:
-        st.divider()
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        st.download_button(
-            "Download ALLE views van ALLE fasen als één SQL-bestand",
-            data="\n\n".join(all_final_sqls).encode("utf-8"),
-            file_name=f"all_stages_{timestamp}.sql", mime="text/sql",
-            type="primary", icon=":material/download:",
-        )
+            # "Download alle fasen" moet ALLE fasen bevatten, ook fasen die de
+            # gebruiker deze sessie nog niet heeft bezocht (sinds we nu, anders
+            # dan bij tabs, maar 1 fase tegelijk renderen) -- daarom worden ze
+            # hier stil (zonder UI) meegegenereerd als ze nog niet bezocht zijn.
+            for stage_name, stage_df in stages.items():
+                if stage_name not in st.session_state.output_all_sqls:
+                    results, _ = generate_all_views(stage_df, use_create_or_alter=use_create_or_alter, add_go=add_go)
+                    st.session_state.output_all_sqls[stage_name] = [item["sql"] for item in results.values()]
+            all_final_sqls = [
+                sql for name in stages for sql in st.session_state.output_all_sqls.get(name, [])
+            ]
+        else:
+            stage_name, df = next(iter(stages.items()))
+            all_final_sqls = render_stage(stage_name, df, use_create_or_alter, add_go)
+
+        if multi_stage and all_final_sqls:
+            st.divider()
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            st.download_button(
+                "Download ALLE views van ALLE fasen als één SQL-bestand",
+                data="\n\n".join(all_final_sqls).encode("utf-8"),
+                file_name=f"all_stages_{timestamp}.sql", mime="text/sql",
+                type="primary", icon=":material/download:",
+            )
 
 
 # ============================================================================

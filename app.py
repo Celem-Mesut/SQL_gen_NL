@@ -86,28 +86,31 @@ st.markdown(
     [data-testid="stToolbar"] [data-testid="stAppDeployButton"] { display: none; }
 
     /* -------------------------------------------------------------------
-       Palet -- her renge NET bir rol verildi, rastgele dagilim yok:
-         #fb8b24 (princeton-orange) -> primaryColor, birincil eylem
-         #0f4c5c (dark-teal)        -> sidebar (ayri navigasyon zonu)
-         #5f0f40 (crimson-violet)   -> baslik tipografisi (h1/h2/h3)
-         #e36414 (autumn-leaf)      -> yapisal cerceveler (kart/metric)
-         #9a031e (deep-crimson)     -> yikici eylemler (verwijderen)
+       Monokromatik derinlik sistemi -- ACIK'tan KOYU'ya, arkadan one:
+         #ffffff (white)          -> sayfa arka plani (0. katman)
+         #c1e2e2 (frozen-water)   -> sidebar / ikincil yuzey (1. katman)
+         #82c4c5 (pearl-aqua)     -> cerceveler (2. katman)
+         #44a6a8 (tropical-teal)  -> birincil eylem/aktif durum (3. katman)
+         #05888a (dark-cyan)      -> basliklar, en on plandaki vurgu (4. katman)
+       Metin govdesi #1C2B2B (notr, teal-tonlu koyu) -- okunabilirlik icin
+       saf dark-cyan yerine, ama baslikar dark-cyan ile "en on planda".
        ------------------------------------------------------------------- */
     h1, h2, h3, [data-testid="stMarkdownContainer"] h1,
     [data-testid="stMarkdownContainer"] h2, [data-testid="stMarkdownContainer"] h3 {
         font-family: 'Space Grotesk', sans-serif !important;
         letter-spacing: -0.01em;
         font-weight: 600 !important;
-        color: #5f0f40 !important;
+        color: #05888a !important;
     }
     code, pre, [data-testid="stCodeBlock"] *, .stCodeBlock * {
         font-family: 'JetBrains Mono', 'Courier New', monospace !important;
     }
 
     [data-testid="stExpander"] {
-        border: 1px solid #e36414 !important;
+        border: 1px solid #82c4c5 !important;
         border-radius: 10px !important;
-        box-shadow: 0 1px 3px rgba(38, 38, 36, 0.05);
+        background: #FFFFFF;
+        box-shadow: 0 1px 3px rgba(5, 136, 138, 0.08);
         overflow: hidden;
     }
     [data-testid="stExpander"] summary {
@@ -116,16 +119,15 @@ st.markdown(
     }
     div[data-testid="stMetric"] {
         background: #FFFFFF;
-        border: 1px solid #e36414;
+        border: 1px solid #82c4c5;
         border-radius: 8px;
         padding: 14px 18px;
     }
     [data-testid="stMetricLabel"] { font-family: 'Inter', sans-serif; opacity: 0.7; }
-    [data-testid="stMetricValue"] { font-family: 'Space Grotesk', sans-serif; }
+    [data-testid="stMetricValue"] { font-family: 'Space Grotesk', sans-serif; color: #05888a; }
 
-    /* Fase-/tab-schakelaars (Home-output + Lineage): actief = princeton-orange
-       (primaryColor via Streamlit's eigen 'primary' knop-stijl), inactief =
-       autumn-leaf omkaderd. */
+    /* Fase-/tab-schakelaars (Home-output + Lineage): actief = tropical-teal
+       (primaryColor), inactief = pearl-aqua omkaderd. */
     [class*="_stage_nav"] button {
         font-size: 1.05rem !important;
         font-family: 'Space Grotesk', sans-serif !important;
@@ -134,21 +136,17 @@ st.markdown(
         border-radius: 10px !important;
     }
     [class*="_stage_nav"] button[kind="secondary"] {
-        border-color: #e36414 !important;
+        border-color: #82c4c5 !important;
+        color: #05888a !important;
     }
 
-    /* Sidebar: dark-teal achtergrond -- eigen navigatiezone, duidelijk
-       gescheiden van de crème inhoud. Tekst/iconen worden licht. */
+    /* Sidebar: frozen-water (1. katman) -- lichter dan de content-
+       achtergrond is niet mogelijk (wit is al de lichtste), dus dit is
+       de eerste stap "naar voren" in de gelaagdheid. Tekst blijft donker
+       (goede leesbaarheid op een lichte achtergrond). */
     [data-testid="stSidebar"] {
-        background: #0f4c5c;
-        border-right: none;
-    }
-    [data-testid="stSidebar"] * { color: #F1EDE6 !important; }
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 { color: #F1EDE6 !important; }
-    [data-testid="stSidebar"] hr { border-color: rgba(241, 237, 230, 0.25); }
-    [data-testid="stSidebar"] button[kind="secondary"] {
-        background: rgba(241, 237, 230, 0.08);
-        border-color: rgba(241, 237, 230, 0.3);
+        background: #c1e2e2;
+        border-right: 1px solid #82c4c5;
     }
     [data-testid="stSidebar"] button p {
         transition: font-weight 0.15s ease, opacity 0.15s ease;
@@ -159,29 +157,18 @@ st.markdown(
     [data-testid="stSidebar"] button:active p {
         opacity: 0.7;
     }
-
-    /* Sjabloon-onizleme tabelleri zijn uitgeschakeld -- deze regel blijft
-       staan voor het geval een dataframe elders nog getoond wordt. */
-    [data-testid="stDataFrame"] {
-        border: 1px solid #e36414 !important;
-        border-radius: 8px !important;
-        overflow: hidden;
+    [data-testid="stSidebar"] button[kind="secondary"] {
+        border-color: #82c4c5 !important;
     }
 
     /* Instellingen-kaart: instellingen niet los in een lege pagina laten
        zweven, maar in een afgebakend kader. */
     .st-key-settings_card {
-        border: 1px solid #e36414;
+        border: 1px solid #82c4c5;
         border-radius: 12px;
         padding: 24px 28px;
         background: #FFFFFF;
         max-width: 640px;
-    }
-
-    /* Verwijder-knoppen (destructieve actie) -- deep-crimson. */
-    button[title*="Verwijder"], .st-key-delete_btn button {
-        border-color: #9a031e !important;
-        color: #9a031e !important;
     }
     </style>
     """,
@@ -517,7 +504,7 @@ elif st.session_state.page == "Lineage":
     st.markdown(
         """
         <div style="display:flex; gap:20px; align-items:center; margin:4px 0 18px 0;
-                    font-size:0.85rem; color:#262624;">
+                    font-size:0.85rem; color:#1C2B2B;">
             <span><span style="display:inline-block; width:11px; height:11px;
                 border-radius:3px; background:#F6E2A8; border:1px solid #C9A227;
                 margin-right:6px;"></span>Bronlaag (vroegste fase)</span>

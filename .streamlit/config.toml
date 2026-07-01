@@ -1,8 +1,14 @@
 [theme]
-# Sicak/krem tema -- notr, tek vurgu rengi (turuncu = birincil eylem).
-primaryColor = "#C15F3C"
-backgroundColor = "#F4F3EE"
-secondaryBackgroundColor = "#EAE7DD"
-textColor = "#262624"
+# Monokromatik derinlik sistemi: arka plan EN ACIK, on planda kalan
+# (etkilesimli/vurgulu) ogeler EN KOYU.
+#   white         (#ffffff) -> sayfa arka plani (en arka katman)
+#   frozen-water  (#c1e2e2) -> sidebar / ikincil yuzeyler (1. katman)
+#   pearl-aqua    (#82c4c5) -> cerceveler (yapisal ayirim, 2. katman)
+#   tropical-teal (#44a6a8) -> birincil eylem/aktif durum (3. katman)
+#   dark-cyan     (#05888a) -> basliklar/en on plan vurgusu (4. katman)
+primaryColor = "#44a6a8"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#c1e2e2"
+textColor = "#1C2B2B"
 font = "sans serif"
-borderColor = "#D6D2C4"
+borderColor = "#82c4c5"

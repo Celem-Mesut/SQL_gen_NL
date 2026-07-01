@@ -82,21 +82,20 @@ st.markdown(
     }
 
     /* -------------------------------------------------------------------
-       Streamlit imzasini gizle (footer + Deploy butonu) -- kendi markanla
-       cikan bir arac gibi gorunsun, "made with streamlit" izi kalmasin.
+       Streamlit imzasini gizle (footer + Deploy butonu).
        ------------------------------------------------------------------- */
     footer { visibility: hidden; }
     [data-testid="stToolbar"] [data-testid="stAppDeployButton"] { display: none; }
-    [data-testid="stDecoration"] { background-image: linear-gradient(90deg, #C15F3C, #E8A87C); }
 
     /* -------------------------------------------------------------------
-       Kart stili: expander ve metric kutularina koyu mor kenarlik + hafif
-       golge -- TUM sayfalarda gecerli, daha belirgin/katmanli gorunum.
+       Cerceve sistemi -- TEK notr renk (#D6D2C4, temanin borderColor'u),
+       turuncu (primaryColor) SADECE birincil eylem/aktif durum icin.
+       Iki rakip vurgu rengi yok -- tutarli, sakin gorunum.
        ------------------------------------------------------------------- */
     [data-testid="stExpander"] {
-        border: 1.5px solid #6C3F94 !important;
+        border: 1px solid #D6D2C4 !important;
         border-radius: 10px !important;
-        box-shadow: 0 1px 3px rgba(38, 38, 36, 0.06);
+        box-shadow: 0 1px 3px rgba(38, 38, 36, 0.05);
         overflow: hidden;
     }
     [data-testid="stExpander"] summary {
@@ -104,36 +103,33 @@ st.markdown(
         font-weight: 500;
     }
     div[data-testid="stMetric"] {
-        background: #F4F3EE;
-        border: 1.5px solid #6C3F94;
+        background: #FFFFFF;
+        border: 1px solid #D6D2C4;
         border-radius: 8px;
         padding: 14px 18px;
     }
-    [data-testid="stMetricLabel"] { font-family: 'Inter', sans-serif; opacity: 0.75; }
+    [data-testid="stMetricLabel"] { font-family: 'Inter', sans-serif; opacity: 0.7; }
     [data-testid="stMetricValue"] { font-family: 'Space Grotesk', sans-serif; }
 
     /* -------------------------------------------------------------------
-       Fase-/tab-schakelaars (Output + Lineage): grote, duidelijk
-       omkaderde knoppen i.p.v. kleine tabs. Gedeelde stijl via een
-       container-key die eindigt op "_stage_nav".
+       Fase-/tab-schakelaars (Output + Lineage): aktif = turuncu dolgu,
+       pasif = notr cerceve (tema border rengi, rastgele renk degil).
        ------------------------------------------------------------------- */
     [class*="_stage_nav"] button {
         font-size: 1.05rem !important;
         font-family: 'Space Grotesk', sans-serif !important;
         font-weight: 600 !important;
         padding: 0.9rem 1.2rem !important;
-        border-width: 2px !important;
-        border-color: #6C3F94 !important;
         border-radius: 10px !important;
     }
     [class*="_stage_nav"] button[kind="secondary"] {
-        color: #6C3F94 !important;
+        border-color: #D6D2C4 !important;
     }
 
     /* -------------------------------------------------------------------
-       Sidebar: baslik altina ince ayrac, buton gecisleri (mevcut).
+       Sidebar: notr ayrac.
        ------------------------------------------------------------------- */
-    [data-testid="stSidebar"] { border-right: 1px solid #EAE7DD; }
+    [data-testid="stSidebar"] { border-right: 1px solid #D6D2C4; }
     [data-testid="stSidebar"] button p {
         transition: font-weight 0.15s ease, opacity 0.15s ease;
     }
@@ -142,6 +138,41 @@ st.markdown(
     }
     [data-testid="stSidebar"] button:active p {
         opacity: 0.6;
+    }
+
+    /* -------------------------------------------------------------------
+       Sablon/veri onizleme tablolari (Sjablonen) -- diger kartlarla ayni
+       cerceve dilini kullansin, ham/cerceve olarak dokulmus gorunmesin.
+       ------------------------------------------------------------------- */
+    [data-testid="stDataFrame"] {
+        border: 1px solid #D6D2C4 !important;
+        border-radius: 8px !important;
+        overflow: hidden;
+    }
+
+    /* -------------------------------------------------------------------
+       "Documentatie/hulp" bolgesi (Home): ikincil/muted bir zon olarak
+       ayirt edilsin -- birincil eylemle (upload) ayni agirlikta gorunmesin.
+       ------------------------------------------------------------------- */
+    .st-key-help_section {
+        background: #EAE7DD;
+        border-radius: 12px;
+        padding: 20px 20px 4px 20px;
+    }
+    .st-key-help_section [data-testid="stExpander"] {
+        background: #F4F3EE;
+    }
+
+    /* -------------------------------------------------------------------
+       Instellingen-kaart: instellingen niet los in een lege pagina laten
+       zweven, maar in een afgebakend kader.
+       ------------------------------------------------------------------- */
+    .st-key-settings_card {
+        border: 1px solid #D6D2C4;
+        border-radius: 12px;
+        padding: 24px 28px;
+        background: #FFFFFF;
+        max-width: 640px;
     }
     </style>
     """,
@@ -305,14 +336,16 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
         col_map = {c["target_column"]: c["expr"] for c in view_data["columns"]}
 
         title = f":material/table_view: {qualified_view_name(view_data)}"
-        if view_data.get("target_system"):
-            title += f"  →  {view_data['target_system']}"
-        title += f"  —  {item['column_count']} kolommen"
 
         # Eerste view standaard open -- gebruiker ziet direct dat er SQL-
         # inhoud en een "kolom toevoegen" formulier achter de titel zit,
         # zonder eerst te hoeven klikken om dat te ontdekken.
         with st.expander(title, expanded=(idx == 0)):
+            meta_bits = [f":material/table_rows: {item['column_count']} kolommen"]
+            if view_data.get("target_system"):
+                meta_bits.append(f":material/database: {view_data['target_system']}")
+            st.caption("&nbsp;&nbsp;·&nbsp;&nbsp;".join(meta_bits))
+
             st.caption(":material/extension: Handmatig toegevoegde kolommen (bijv. Business Key, controlekolom, ...)")
             extra_columns = render_manual_columns_ui(view_key, col_map)
 
@@ -401,84 +434,86 @@ if st.session_state.page == "Home":
 
     st.divider()
 
-    with st.expander("CSV/Excel-kolombeschrijvingen"):
-        st.markdown(
-            "**Kolomvolgorde:** eerst bron (`source_*`), dan doel (`target_*`).\n\n"
-            "**Verplicht in elke rij:**\n"
-            "- `source_schema`, `source_table`, `source_column`\n"
-            "- `target_schema`, `target_table`\n\n"
-            "**target_column + target_datatype:** Worden samen opgegeven (normale "
-            "SELECT-kolom) **of** beide leeg gelaten — in dat geval is de rij "
-            "*uitsluitend een filter* (voegt geen kolom toe aan SELECT, alleen "
-            "`where_condition` wordt toegepast; in dat geval is `where_condition` "
-            "verplicht).\n\n"
-            "**Optionele kolommen:**\n"
-            "- `source_system`: Voor cross-warehouse/lakehouse QUERIES (3-delige "
-            "naamgeving, FROM/JOIN-kant). Vul hier de naam van het andere item in "
-            "wanneer u verwijst naar een ander Warehouse/Lakehouse (bijv. als de "
-            "GGM-laag in een ander Warehouse staat dan Gold). Leeg laten als het "
-            "in hetzelfde warehouse staat.\n"
-            "- `target_system`: Documenteert tot WELK warehouse/lakehouse deze view "
-            "behoort. Indien ingevuld wordt een ECHTE 3-delige naamgeving gebruikt in "
-            "`CREATE VIEW`: `[target_system].[target_schema].[view_name]` — nodig om "
-            "warehouses met gelijknamige schema's te onderscheiden. Indien leeg blijft "
-            "de eenvoudige 2-delige vorm `[target_schema].[view_name]` behouden. Moet "
-            "**gelijk** zijn voor alle rijen binnen één `target_table`-groep (of "
-            "allemaal leeg).\n"
-            "- `source_datatype`: Indien leeg of gelijk aan target_datatype wordt "
-            "geen CAST toegevoegd; indien verschillend wordt automatisch `CAST(...)` "
-            "toegepast.\n"
-            "- `transformation`: Aangepaste SQL-expressie. De placeholder `{src}` "
-            "wordt vervangen door de bronkolomverwijzing (bijv. `UPPER({src})`, "
-            "`CASE WHEN {src} < 18 THEN ... END`).\n"
-            "- `where_condition`: Wordt toegevoegd aan de WHERE-voorwaarde van de "
-            "view. `{src}` wordt vervangen door de eigen bronkolom van die rij. Als "
-            "dit op meerdere rijen binnen dezelfde `target_table` wordt opgegeven, "
-            "worden ze allemaal met **AND** gecombineerd.\n"
-            "- `join_type` / `join_condition`: Als binnen één `target_table` "
-            "meerdere brontabellen worden gebruikt, moeten deze op de **eerste "
-            "rij** van die tabel worden opgegeven (`INNER` / `LEFT` / `RIGHT` / `FULL`)."
-        )
+    st.markdown("##### :material/menu_book: Documentatie & hulp")
+    with st.container(key="help_section"):
+        with st.expander("CSV/Excel-kolombeschrijvingen"):
+            st.markdown(
+                "**Kolomvolgorde:** eerst bron (`source_*`), dan doel (`target_*`).\n\n"
+                "**Verplicht in elke rij:**\n"
+                "- `source_schema`, `source_table`, `source_column`\n"
+                "- `target_schema`, `target_table`\n\n"
+                "**target_column + target_datatype:** Worden samen opgegeven (normale "
+                "SELECT-kolom) **of** beide leeg gelaten — in dat geval is de rij "
+                "*uitsluitend een filter* (voegt geen kolom toe aan SELECT, alleen "
+                "`where_condition` wordt toegepast; in dat geval is `where_condition` "
+                "verplicht).\n\n"
+                "**Optionele kolommen:**\n"
+                "- `source_system`: Voor cross-warehouse/lakehouse QUERIES (3-delige "
+                "naamgeving, FROM/JOIN-kant). Vul hier de naam van het andere item in "
+                "wanneer u verwijst naar een ander Warehouse/Lakehouse (bijv. als de "
+                "GGM-laag in een ander Warehouse staat dan Gold). Leeg laten als het "
+                "in hetzelfde warehouse staat.\n"
+                "- `target_system`: Documenteert tot WELK warehouse/lakehouse deze view "
+                "behoort. Indien ingevuld wordt een ECHTE 3-delige naamgeving gebruikt in "
+                "`CREATE VIEW`: `[target_system].[target_schema].[view_name]` — nodig om "
+                "warehouses met gelijknamige schema's te onderscheiden. Indien leeg blijft "
+                "de eenvoudige 2-delige vorm `[target_schema].[view_name]` behouden. Moet "
+                "**gelijk** zijn voor alle rijen binnen één `target_table`-groep (of "
+                "allemaal leeg).\n"
+                "- `source_datatype`: Indien leeg of gelijk aan target_datatype wordt "
+                "geen CAST toegevoegd; indien verschillend wordt automatisch `CAST(...)` "
+                "toegepast.\n"
+                "- `transformation`: Aangepaste SQL-expressie. De placeholder `{src}` "
+                "wordt vervangen door de bronkolomverwijzing (bijv. `UPPER({src})`, "
+                "`CASE WHEN {src} < 18 THEN ... END`).\n"
+                "- `where_condition`: Wordt toegevoegd aan de WHERE-voorwaarde van de "
+                "view. `{src}` wordt vervangen door de eigen bronkolom van die rij. Als "
+                "dit op meerdere rijen binnen dezelfde `target_table` wordt opgegeven, "
+                "worden ze allemaal met **AND** gecombineerd.\n"
+                "- `join_type` / `join_condition`: Als binnen één `target_table` "
+                "meerdere brontabellen worden gebruikt, moeten deze op de **eerste "
+                "rij** van die tabel worden opgegeven (`INNER` / `LEFT` / `RIGHT` / `FULL`)."
+            )
 
-    with st.expander(":material/link_2: Alias-/tabelprefixregel"):
-        st.markdown(
-            "Als een view **uit slechts één brontabel** wordt gevoed (geen JOIN), "
-            "wordt in de SELECT-lijst **geen tabelprefix** voor kolomnamen gezet — "
-            "alleen `[Kolom]`. Bij meerdere brontabellen (JOIN) wordt het formaat "
-            "`[Alias].[Kolom]` gebruikt, omdat anders onduidelijk is uit welke "
-            "tabel een kolom komt. Deze regel wordt automatisch toegepast en is "
-            "niet instelbaar."
-        )
+        with st.expander(":material/link_2: Alias-/tabelprefixregel"):
+            st.markdown(
+                "Als een view **uit slechts één brontabel** wordt gevoed (geen JOIN), "
+                "wordt in de SELECT-lijst **geen tabelprefix** voor kolomnamen gezet — "
+                "alleen `[Kolom]`. Bij meerdere brontabellen (JOIN) wordt het formaat "
+                "`[Alias].[Kolom]` gebruikt, omdat anders onduidelijk is uit welke "
+                "tabel een kolom komt. Deze regel wordt automatisch toegepast en is "
+                "niet instelbaar."
+            )
 
-    with st.expander(":material/extension: Wat zijn handmatige kolommen?"):
-        st.markdown(
-            "Op de **:material/sql: Output**-pagina kunt u, onder elke view, één of meer "
-            "**handmatig samengestelde kolommen** toevoegen die niet in de bron-/"
-            "doeltabellen voorkomen — bijvoorbeeld een Business Key (om de "
-            "uniciteit van records te controleren), een controlekolom, of iets "
-            "anders. Wordt **niet** vanuit CSV/Excel toegevoegd.\n\n"
-            "Per kolom voert u een naam en de onderdelen in, gescheiden door "
-            "komma's, in de gewenste volgorde:\n"
-            "- Voor **vaste tekst** gebruikt u aanhalingstekens: `\"OOST\"`\n"
-            "- Voor **een kolom** typt u de doelkolomnaam exact, zonder "
-            "aanhalingstekens: `PersoonID` — of gebruik het keuzemenu "
-            "**'Kolom toevoegen'** om een bestaande kolom met één klik toe te "
-            "voegen aan de onderdelen.\n\n"
-            "Voorbeeldinvoer: `\"OOST\", PersoonID, Geboortedatum` →\n\n"
-            "`CAST(CONCAT('OOST', ' | ', [PersoonID], ' | ', [Geboortedatum]) "
-            "AS VARCHAR(255))`\n\n"
-            "Elke kolom wordt **vooraan** in de SELECT-lijst toegevoegd, in de "
-            "volgorde waarin u ze heeft aangemaakt; u kunt zoveel kolommen "
-            "toevoegen als u wilt, en elk afzonderlijk weer verwijderen."
-        )
+        with st.expander(":material/extension: Wat zijn handmatige kolommen?"):
+            st.markdown(
+                "Op de **:material/sql: Output**-pagina kunt u, onder elke view, één of meer "
+                "**handmatig samengestelde kolommen** toevoegen die niet in de bron-/"
+                "doeltabellen voorkomen — bijvoorbeeld een Business Key (om de "
+                "uniciteit van records te controleren), een controlekolom, of iets "
+                "anders. Wordt **niet** vanuit CSV/Excel toegevoegd.\n\n"
+                "Per kolom voert u een naam en de onderdelen in, gescheiden door "
+                "komma's, in de gewenste volgorde:\n"
+                "- Voor **vaste tekst** gebruikt u aanhalingstekens: `\"OOST\"`\n"
+                "- Voor **een kolom** typt u de doelkolomnaam exact, zonder "
+                "aanhalingstekens: `PersoonID` — of gebruik het keuzemenu "
+                "**'Kolom toevoegen'** om een bestaande kolom met één klik toe te "
+                "voegen aan de onderdelen.\n\n"
+                "Voorbeeldinvoer: `\"OOST\", PersoonID, Geboortedatum` →\n\n"
+                "`CAST(CONCAT('OOST', ' | ', [PersoonID], ' | ', [Geboortedatum]) "
+                "AS VARCHAR(255))`\n\n"
+                "Elke kolom wordt **vooraan** in de SELECT-lijst toegevoegd, in de "
+                "volgorde waarin u ze heeft aangemaakt; u kunt zoveel kolommen "
+                "toevoegen als u wilt, en elk afzonderlijk weer verwijderen."
+            )
 
-    with st.expander(":material/hub: Wat toont de Lineage-pagina?"):
-        st.markdown(
-            "De **:material/hub: Lineage**-pagina toont voor elke gegenereerde "
-            "view een diagram met de volledige herkomst over alle fasen heen "
-            "(bijv. Silver → GGM → Gold). Dit wordt automatisch afgeleid uit de "
-            "`source_table`-verwijzingen -- geen extra configuratie nodig."
-        )
+        with st.expander(":material/hub: Wat toont de Lineage-pagina?"):
+            st.markdown(
+                "De **:material/hub: Lineage**-pagina toont voor elke gegenereerde "
+                "view een diagram met de volledige herkomst over alle fasen heen "
+                "(bijv. Silver → GGM → Gold). Dit wordt automatisch afgeleid uit de "
+                "`source_table`-verwijzingen -- geen extra configuratie nodig."
+            )
 
 
 # ============================================================================
@@ -618,23 +653,24 @@ elif st.session_state.page == "Lineage":
 elif st.session_state.page == "Instellingen":
     st.title(":material/settings: Instellingen")
 
-    st.toggle(
-        "Gebruik CREATE OR ALTER VIEW",
-        value=True, key="opt_create_or_alter",
-        help="Indien uitgeschakeld wordt een gewone CREATE VIEW gegenereerd "
-             "(geeft een fout als de view al bestaat).",
-    )
-    st.toggle(
-        "Voeg GO toe na elke view",
-        value=True, key="opt_add_go",
-        help="Batch-scheidingsteken om in SSMS / de Fabric SQL-editor in "
-             "één keer uit te voeren.",
-    )
-
-    st.caption(
-        "Deze instellingen gelden voor alle fasen op de **:material/sql: Output**-pagina "
-        "en blijven bewaard zolang u de app niet herlaadt."
-    )
+    with st.container(key="settings_card"):
+        st.markdown("**SQL-generatie-opties**")
+        st.toggle(
+            "Gebruik CREATE OR ALTER VIEW",
+            value=True, key="opt_create_or_alter",
+            help="Indien uitgeschakeld wordt een gewone CREATE VIEW gegenereerd "
+                 "(geeft een fout als de view al bestaat).",
+        )
+        st.toggle(
+            "Voeg GO toe na elke view",
+            value=True, key="opt_add_go",
+            help="Batch-scheidingsteken om in SSMS / de Fabric SQL-editor in "
+                 "één keer uit te voeren.",
+        )
+        st.caption(
+            "Deze instellingen gelden voor alle fasen op de **:material/sql: Output**-pagina "
+            "en blijven bewaard zolang u de app niet herlaadt."
+        )
 
 
 # ============================================================================

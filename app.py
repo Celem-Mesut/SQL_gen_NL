@@ -90,12 +90,11 @@ st.markdown(
     [data-testid="stDecoration"] { background-image: linear-gradient(90deg, #C15F3C, #E8A87C); }
 
     /* -------------------------------------------------------------------
-       Kart stili: expander ve metric kutularina ince kenarlik + hafif
-       golge -- duz/basit degil, katmanli/profesyonel gorunum. (Genel/
-       tum sayfalar icin notr renk.)
+       Kart stili: expander ve metric kutularina koyu mor kenarlik + hafif
+       golge -- TUM sayfalarda gecerli, daha belirgin/katmanli gorunum.
        ------------------------------------------------------------------- */
     [data-testid="stExpander"] {
-        border: 1px solid #EAE7DD !important;
+        border: 1.5px solid #6C3F94 !important;
         border-radius: 10px !important;
         box-shadow: 0 1px 3px rgba(38, 38, 36, 0.06);
         overflow: hidden;
@@ -106,7 +105,7 @@ st.markdown(
     }
     div[data-testid="stMetric"] {
         background: #F4F3EE;
-        border: 1px solid #EAE7DD;
+        border: 1.5px solid #6C3F94;
         border-radius: 8px;
         padding: 14px 18px;
     }
@@ -114,26 +113,21 @@ st.markdown(
     [data-testid="stMetricValue"] { font-family: 'Space Grotesk', sans-serif; }
 
     /* -------------------------------------------------------------------
-       Output-pagina: koyu mor, belirgin cerceveler -- hem fase-knoppen
-       hem view-kaartjes (expanders/metrics) alleen op deze pagina.
+       Fase-/tab-schakelaars (Output + Lineage): grote, duidelijk
+       omkaderde knoppen i.p.v. kleine tabs. Gedeelde stijl via een
+       container-key die eindigt op "_stage_nav".
        ------------------------------------------------------------------- */
-    .st-key-output_page [data-testid="stExpander"] {
-        border: 1.5px solid #4B2E68 !important;
-    }
-    .st-key-output_page div[data-testid="stMetric"] {
-        border: 1.5px solid #4B2E68 !important;
-    }
-    .st-key-output_stage_nav button {
+    [class*="_stage_nav"] button {
         font-size: 1.05rem !important;
         font-family: 'Space Grotesk', sans-serif !important;
         font-weight: 600 !important;
         padding: 0.9rem 1.2rem !important;
         border-width: 2px !important;
-        border-color: #4B2E68 !important;
+        border-color: #6C3F94 !important;
         border-radius: 10px !important;
     }
-    .st-key-output_stage_nav button[kind="secondary"] {
-        color: #4B2E68 !important;
+    [class*="_stage_nav"] button[kind="secondary"] {
+        color: #6C3F94 !important;
     }
 
     /* -------------------------------------------------------------------
@@ -596,11 +590,26 @@ elif st.session_state.page == "Lineage":
         st.stop()
 
     qnames = find_terminal_views(lineage_index)
-    lineage_tabs = st.tabs(qnames)
-    for tab, qname in zip(lineage_tabs, qnames):
-        with tab:
-            dot = build_lineage_dot(qname, lineage_index)
-            st.graphviz_chart(dot)
+
+    if "lineage_qname" not in st.session_state or st.session_state.lineage_qname not in qnames:
+        st.session_state.lineage_qname = qnames[0]
+
+    with st.container(key="lineage_stage_nav"):
+        btn_cols = st.columns(len(qnames))
+        for col, qname in zip(btn_cols, qnames):
+            active = st.session_state.lineage_qname == qname
+            if col.button(
+                f":material/table_view:  {qname}",
+                key=f"lineage_qname_btn_{qname}",
+                type="primary" if active else "secondary",
+                width='stretch',
+            ):
+                st.session_state.lineage_qname = qname
+                st.rerun()
+    st.divider()
+
+    dot = build_lineage_dot(st.session_state.lineage_qname, lineage_index)
+    st.graphviz_chart(dot)
 
 
 # ============================================================================

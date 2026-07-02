@@ -235,6 +235,8 @@ güncel resmi marka kılavuzunda kesin hex kodları değişmiş olabilir.
 - `template.csv` — Tek aşamalı örnek
 - `template.xlsx` — İki bağımsız warehouse'lu (GGM_Warehouse, Gold_Warehouse) iki aşamalı örnek
 - `.streamlit/config.toml` — Renk teması
+- `.streamlit/secrets.toml.example` — API-key şablonu (gerçek key'i `.streamlit/secrets.toml` olarak kopyalayın, o dosya git'e girmez)
+- `.gitignore` — `secrets.toml`, `.env`, `__pycache__` gibi hassas/gereksiz dosyaları Git'ten hariç tutar
 - `requirements.txt` — Bağımlılıklar
 
 ## 🤖 AI-assistent (opsiyonel, NVIDIA)
@@ -254,9 +256,32 @@ Met een key ingesteld, verschijnt onder elke gegenereerde view op de
 **Belangrijk:** de AI-antwoorden zijn **uitsluitend adviserend** — ze passen
 de daadwerkelijk gegenereerde SQL (die deterministisch uit uw CSV/Excel
 wordt afgeleid) niet automatisch aan. Een voorgestelde wijziging moet u zelf
-overnemen in uw bron-CSV/Excel als u die permanent wilt maken. De API-key
-wordt alleen in het geheugen van uw sessie bewaard, nooit op schijf
-opgeslagen.
+overnemen in uw bron-CSV/Excel als u die permanent wilt maken.
+
+### 🔑 API-key instellen (veilig, niet in Git)
+
+De key wordt **nooit** in de broncode geschreven. In plaats daarvan gebruikt
+de app Streamlit's ingebouwde `st.secrets`:
+
+1. **Lokaal**: kopieer `.streamlit/secrets.toml.example` naar
+   `.streamlit/secrets.toml` (deze bestandsnaam staat al in `.gitignore` —
+   git zal hem nooit meenemen) en vul uw echte key in:
+   ```toml
+   NVIDIA_API_KEY = "nvapi-..."
+   NVIDIA_MODEL = "qwen/qwen2.5-coder-32b-instruct"
+   ```
+2. **Streamlit Community Cloud** (als de app via GitHub is gekoppeld): ga
+   naar uw app → **Settings → Secrets**, en plak daar dezelfde TOML-inhoud.
+   De repository zelf krijgt de key nooit te zien.
+
+Zonder key ingesteld blijft de rest van de app gewoon werken — de
+AI-assistent verschijnt dan simpelweg niet.
+
+> ⚠️ Als u ooit per ongeluk een echte key naar een Git-repository heeft
+> gepusht (ook als u hem daarna weer verwijderde), staat hij nog in de
+> **Git-geschiedenis** en moet als gecompromitteerd worden beschouwd.
+> Genereer in dat geval een nieuwe key op build.nvidia.com en deactiveer
+> de oude.
 
 ## Genişletme önerileri
 

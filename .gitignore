@@ -1,0 +1,13 @@
+# Gizli anahtarlar -- ASLA commit edilmemeli.
+.streamlit/secrets.toml
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Streamlit
+.streamlit/cache/

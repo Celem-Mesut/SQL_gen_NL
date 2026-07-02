@@ -40,8 +40,9 @@ NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 #     omgevingsvariabele (bijv. os.environ.get("NVIDIA_API_KEY", "")) of de
 #     invoervelden op de Instellingen-pagina, niet een hardcoded string.
 # ----------------------------------------------------------------------------
-DEMO_NVIDIA_API_KEY = ""  "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"
-DEMO_NVIDIA_MODEL = "mistralai/mixtral-8x7b-instruct-v0.1"
+DEMO_NVIDIA_API_KEY = ""  # bijv. "nvapi-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+DEMO_NVIDIA_MODEL = ""    # leeg = onderstaande DEFAULT_MODEL wordt gebruikt
+
 # Varsayilan model -- build.nvidia.com/models katalogundaki guncel model
 # kimligiyle degistirilebilir (katalog zaman icinde degisebilir, bu yuzden
 # Instellingen sayfasinda serbest metin olarak duzenlenebilir tutuldu).
@@ -94,15 +95,25 @@ def check_sql_syntax(api_key, model, sql):
 def ask_followup(api_key, model, sql, history, question):
     """Vervolgvraag/verfijningsverzoek over een specifieke SQL-view.
     'history' is een lijst van {'role': ..., 'content': ...} dicts met
-    eerdere beurten in dit gesprek (exclusief system-prompt en de eerste
-    SQL-context, die hier opnieuw worden meegestuurd)."""
+    eerdere beurten in dit gesprek (strikt afwisselend user/assistant).
+
+    BELANGRIJK: de SQL-context wordt NIET als aparte, losstaande user-
+    boodschap vóór de geschiedenis geplaatst -- dat zou twee opeenvolgende
+    user-beurten opleveren (system -> user[sql] -> user[history[0]]), wat
+    NVIDIA's model afwijst met "conversation roles must alternate
+    user/assistant/...". In plaats daarvan wordt de SQL alleen in de EERSTE
+    vraag van het gesprek ingebed; latere vervolgvragen bouwen voort op de
+    geschiedenis, die al strikt alterneert."""
     client = _client(api_key)
-    messages = [
-        {"role": "system", "content": FOLLOWUP_SYSTEM_PROMPT},
-        {"role": "user", "content": f"Hier is de huidige SQL:\n```sql\n{sql}\n```"},
-    ]
+    messages = [{"role": "system", "content": FOLLOWUP_SYSTEM_PROMPT}]
     messages.extend(history)
-    messages.append({"role": "user", "content": question})
+    if history:
+        messages.append({"role": "user", "content": question})
+    else:
+        messages.append({
+            "role": "user",
+            "content": f"Hier is de huidige SQL:\n```sql\n{sql}\n```\n\n{question}",
+        })
     response = client.chat.completions.create(
         model=model, messages=messages, temperature=0.3, max_tokens=1200,
     )

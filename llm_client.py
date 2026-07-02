@@ -40,8 +40,8 @@ NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 #     omgevingsvariabele (bijv. os.environ.get("NVIDIA_API_KEY", "")) of de
 #     invoervelden op de Instellingen-pagina, niet een hardcoded string.
 # ----------------------------------------------------------------------------
-DEMO_NVIDIA_API_KEY = ""  # bijv. "nvapi-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-DEMO_NVIDIA_MODEL = ""    # leeg = onderstaande DEFAULT_MODEL wordt gebruikt
+DEMO_NVIDIA_API_KEY = "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"
+DEMO_NVIDIA_MODEL = "mistralai/mixtral-8x7b-instruct-v0.1"    # leeg = onderstaande DEFAULT_MODEL wordt gebruikt
 
 # Varsayilan model -- build.nvidia.com/models katalogundaki guncel model
 # kimligiyle degistirilebilir (katalog zaman icinde degisebilir, bu yuzden

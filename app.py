@@ -355,13 +355,15 @@ def render_ai_assistant(view_key, final_sql):
         with st.chat_message(turn["role"]):
             st.markdown(turn["content"])
 
-    col_q, col_send = st.columns([5, 1])
-    question = col_q.text_input(
-        "Vervolgvraag / verfijningsverzoek", key=f"aiinput_{view_key}",
-        label_visibility="collapsed",
-        placeholder="Bijv. 'Voeg een filter toe op actieve records'",
-    )
-    if col_send.button(":material/send:", key=f"aisend_{view_key}", width='stretch') and question.strip():
+    with st.form(key=f"aiform_{view_key}", clear_on_submit=True, border=False):
+        col_q, col_send = st.columns([5, 1])
+        question = col_q.text_input(
+            "Vervolgvraag / verfijningsverzoek", key=f"aiinput_{view_key}",
+            label_visibility="collapsed",
+            placeholder="Bijv. 'Voeg een filter toe op actieve records'",
+        )
+        submitted = col_send.form_submit_button(":material/send:", width='stretch')
+    if submitted and question.strip():
         st.session_state[hist_key].append({"role": "user", "content": question})
         with st.spinner("NVIDIA-model denkt na..."):
             try:

@@ -53,6 +53,18 @@ Opsiyonel kolonlar:
                          varsa, o tabloya ait ILK satirda belirtilmelidir.
     join_condition   -> join_type ile birlikte, o tabloya ait ILK satirda
                          belirtilmelidir (ON kosulu, serbest metin).
+    union_group      -> Birden fazla tabloyu UNION ALL ile TEK bir view'de
+                         birlestirmek icin. Ayni target_table grubundaki
+                         satirlar bu deger bazinda "dallara" (branch) ayrilir
+                         -- her dal kendi SELECT'ini uretir (icinde JOIN da
+                         olabilir), sonunda tum dallar UNION ALL ile
+                         birlestirilir. BOS birakilirsa (varsayilan): union
+                         yok, eski davranis aynen devam eder. DOLU birakilirsa:
+                         o target_table'a ait TUM satirlarda doldurulmus
+                         olmasi ZORUNLUDUR (kismi doldurma hataya neden olur).
+                         Dallar arasinda target_column KUMESI FARKLI olabilir
+                         -- bir dalda olmayan bir kolon, o dalda otomatik
+                         olarak dogru tipte CAST(NULL AS ...) ile doldurulur.
 
 :material/link_2: Alias kurali (ONEMLI):
     Bir view SADECE TEK bir kaynak tablodan besleniyorsa (JOIN yoksa), SELECT
@@ -87,6 +99,7 @@ OPTIONAL_COLUMNS = [
     "target_system",
     "transformation", "where_condition",
     "join_type", "join_condition",
+    "union_group",
 ]
 
 REQUIRED_COLUMNS = ALWAYS_REQUIRED_COLUMNS  # geriye donuk uyumluluk icin
@@ -94,7 +107,7 @@ REQUIRED_COLUMNS = ALWAYS_REQUIRED_COLUMNS  # geriye donuk uyumluluk icin
 ALL_COLUMNS = [
     "source_system", "source_schema", "source_table", "source_column", "source_datatype",
     "target_system", "target_schema", "target_table", "target_column", "target_datatype",
-    "transformation", "where_condition", "join_type", "join_condition",
+    "transformation", "where_condition", "join_type", "join_condition", "union_group",
 ]
 
 
@@ -351,6 +364,124 @@ def build_view_data(group_df, target_schema, target_table,
     }
 
 
+def _target_column_datatypes(group_df):
+    """target_table grubunun TUM satirlarindan, ilk gorulen target_datatype
+    degerini kullanarak {target_column: target_datatype} sozlugu kurar --
+    UNION dallarinda eksik olan bir kolon icin dogru TIPTE NULL uretmek
+    amaciyla kullanilir (bkz. build_union_view_data)."""
+    types = OrderedDict()
+    for _, row in group_df.iterrows():
+        if row["target_column"] and row["target_column"] not in types:
+            types[row["target_column"]] = row["target_datatype"]
+    return types
+
+
+def _split_union_branches(group_df):
+    """group_df'i union_group kolonuna gore sirali dallara boler.
+
+    Donus: [(union_group_label, branch_df), ...]
+        - union_group TUM satirlarda bossa -> TEK (None, group_df) doner,
+          yani "union yok, eski davranis aynen devam" durumu.
+        - BAZI satirlarda dolu, bazilarinda bossa -> ValidationError (kismi
+          doldurma belirsizlige yol acar, ya hep ya hic).
+    """
+    values = group_df["union_group"].tolist()
+    non_blank_count = sum(1 for v in values if v)
+    if non_blank_count == 0:
+        return [(None, group_df)]
+    if non_blank_count != len(values):
+        raise ValidationError(
+            "union_group, sommige rijen van een doeltabel is ingevuld maar "
+            "niet allemaal. Als union_group wordt gebruikt, moet dit voor "
+            "ALLE rijen van die doeltabel zijn ingevuld (geen mix van lege "
+            "en ingevulde union_group)."
+        )
+    branches = []
+    for g, branch_df in group_df.groupby("union_group", sort=False):
+        branches.append((g, branch_df.reset_index(drop=True)))
+    return branches
+
+
+def build_union_view_data(group_df, target_schema, target_table,
+                           use_create_or_alter=True, add_go=True):
+    """group_df'i union_group'a gore dallara boler, HER DAL icin mevcut
+    build_view_data mantigini (JOIN, CAST, alias, filtre -- HEPSI AYNEN)
+    calistirir, sonra dallari ortak bir hedef-kolon SIRASINDA (canonical)
+    hizalar. Bir dalda olmayan bir hedef kolon, o dalda otomatik olarak
+    dogru TIPTE CAST(NULL AS ...) ile doldurulur -- boylece dallarin kolon
+    kumeleri birebir ayni olmak ZORUNDA DEGILDIR."""
+    branches_raw = _split_union_branches(group_df)
+
+    # target_system TUM grup (tum dallar birlikte) icin tutarli olmali --
+    # build_view_data bunu SADECE kendi dalinin icinde kontrol eder, o
+    # yuzden burada AYRICA dallar-arasi kontrol gerekir.
+    target_systems = {t for t in group_df["target_system"] if t}
+    if len(target_systems) > 1:
+        raise ValidationError(
+            f"Voor '{target_table}' zijn meerdere verschillende target_system-"
+            f"waarden gevonden: {sorted(target_systems)}. Alle rijen van een "
+            "view moeten tot hetzelfde target_system behoren (of volledig leeg zijn)."
+        )
+    target_system = next(iter(target_systems), "")
+
+    datatypes = _target_column_datatypes(group_df)
+
+    branch_view_datas = [
+        build_view_data(
+            branch_df, target_schema, target_table,
+            use_create_or_alter=use_create_or_alter, add_go=add_go,
+        )
+        for _, branch_df in branches_raw
+    ]
+
+    # Canonical kolon sirasi: ilk dalin sirasi esas alinir, sonraki
+    # dallarin YENI (ilk dalda olmayan) kolonlari sona eklenir.
+    canonical_columns = []
+    seen = set()
+    for bvd in branch_view_datas:
+        for col in bvd["columns"]:
+            if col["target_column"] not in seen:
+                seen.add(col["target_column"])
+                canonical_columns.append(col["target_column"])
+
+    branches = []
+    for bvd in branch_view_datas:
+        partial_map = {c["target_column"]: c["expr"] for c in bvd["columns"]}
+        full_map = {}
+        select_lines = []
+        for tc in canonical_columns:
+            if tc in partial_map:
+                expr = partial_map[tc]
+            else:
+                expr = f"CAST(NULL AS {datatypes.get(tc, 'NVARCHAR(4000)')})"
+            full_map[tc] = expr
+            select_lines.append(f"{expr} AS [{tc}]")
+        branches.append({
+            "col_map": full_map,
+            "select_lines": select_lines,
+            "from_lines": bvd["from_lines"],
+            "where_conditions": bvd["where_conditions"],
+        })
+
+    # UI/manuel-kolon (Business Key) otomatik-tamamlama icin temsili
+    # "columns" listesi (ilk dalda bulunan ifade, yoksa NULL-cast).
+    columns = [{"target_column": tc, "expr": branches[0]["col_map"][tc]} for tc in canonical_columns]
+
+    return {
+        "target_schema": target_schema,
+        "target_table": target_table,
+        "target_system": target_system,
+        "view_name": _view_name(target_table),
+        "create_stmt": "CREATE OR ALTER VIEW" if use_create_or_alter else "CREATE VIEW",
+        "add_go": add_go,
+        "has_join": any(bvd["has_join"] for bvd in branch_view_datas),
+        "is_union": True,
+        "union_type": "UNION ALL",
+        "columns": columns,
+        "branches": branches,
+    }
+
+
 def parse_business_key_input(raw_text, col_map):
     """Kullanicinin serbest metin olarak girdigi BK parcalarini ayristirir.
 
@@ -442,14 +573,21 @@ def build_business_key_select_line(bk_name, parts):
 
 
 def render_view_sql(view_data, extra_columns=None):
-    """view_data (build_view_data ciktisi) icin nihai T-SQL metnini uretir.
+    """view_data (build_view_data VEYA build_union_view_data ciktisi) icin
+    nihai T-SQL metnini uretir.
 
-    extra_columns: None veya bir LISTE, her biri {"name": str, "parts": [str, ...]}.
-        Bu, kullanicinin arayuzden MANUEL olarak ekledigi kolonlardir (Business
-        Key, kontrol kolonu, vs. -- herhangi bir amacla). "parts" zaten SQL'e
-        hazir ifadelerdir (bkz. parse_business_key_input). Verilen SIRAYLA,
-        SELECT listesinin EN BASINA eklenirler.
+    extra_columns: None veya bir LISTE, her biri {"name": str, "parts": [str, ...],
+        "raw_text": str}. Bu, kullanicinin arayuzden MANUEL olarak ekledigi
+        kolonlardir (Business Key, kontrol kolonu, vs.). Normal (union
+        olmayan) view'lerde "parts" (onceden cozumlenmis SQL ifadeleri)
+        kullanilir. UNION view'lerde ise HER DAL kendi kolon kumesine sahip
+        olabildigi icin, "raw_text" o dalin KENDI col_map'i ile YENIDEN
+        cozumlenir -- boylece bir dalda olmayan bir kolona referans verilse
+        bile, o dal icin dogru (NULL-doldurulmus) ifade kullanilir.
     """
+    if view_data.get("is_union"):
+        return _render_union_view_sql(view_data, extra_columns=extra_columns)
+
     select_lines = []
     for extra in (extra_columns or []):
         if extra.get("parts"):
@@ -484,6 +622,43 @@ def render_view_sql(view_data, extra_columns=None):
     return sql
 
 
+def _render_union_view_sql(view_data, extra_columns=None):
+    """build_union_view_data ciktisi icin, HER DALI ayri bir SELECT olarak
+    render edip aralarina UNION ALL (view_data['union_type']) koyarak
+    birlestirir. Manuel kolonlar (extra_columns) HER DALA AYRI AYRI, o dalin
+    kendi col_map'i ile yeniden cozumlenerek eklenir -- bkz. render_view_sql
+    docstring'i."""
+    branch_sqls = []
+    for branch in view_data["branches"]:
+        lines = []
+        for extra in (extra_columns or []):
+            parts, _errors = parse_business_key_input(extra.get("raw_text", ""), branch["col_map"])
+            if parts:
+                lines.append(f"    {build_business_key_select_line(extra['name'], parts)}")
+        for line in branch["select_lines"]:
+            lines.append(f"    {line}")
+
+        branch_sql = "SELECT\n" + ",\n".join(lines) + "\n" + "\n".join(branch["from_lines"])
+        if branch["where_conditions"]:
+            branch_sql += "\nWHERE\n    " + "\n    AND ".join(f"({c})" for c in branch["where_conditions"])
+        branch_sqls.append(branch_sql)
+
+    union_kw = f"\n{view_data.get('union_type', 'UNION ALL')}\n"
+    sql = (
+        f"{view_data['create_stmt']} {qualified_view_name(view_data)}\n"
+        f"AS\n"
+        + union_kw.join(branch_sqls)
+    )
+    sql += "\n;"
+    if view_data["add_go"]:
+        sql += "\nGO"
+
+    if view_data.get("target_system"):
+        sql = f"-- Doel Warehouse/Lakehouse: {view_data['target_system']}\n" + sql
+
+    return sql
+
+
 def generate_all_views(df, use_create_or_alter=True, add_go=True):
     """df icindeki tum satirlari (target_schema, target_table) bazinda gruplar
     ve her grup icin bir view tanimi + varsayilan (Business Key'siz) SQL uretir.
@@ -498,10 +673,16 @@ def generate_all_views(df, use_create_or_alter=True, add_go=True):
     grouped = df.groupby(["target_schema", "target_table"], sort=False)
     for (target_schema, target_table), group_df in grouped:
         try:
-            view_data = build_view_data(
-                group_df, target_schema, target_table,
-                use_create_or_alter=use_create_or_alter, add_go=add_go,
-            )
+            if (group_df["union_group"] != "").any():
+                view_data = build_union_view_data(
+                    group_df, target_schema, target_table,
+                    use_create_or_alter=use_create_or_alter, add_go=add_go,
+                )
+            else:
+                view_data = build_view_data(
+                    group_df, target_schema, target_table,
+                    use_create_or_alter=use_create_or_alter, add_go=add_go,
+                )
             sql = render_view_sql(view_data)
             results[(target_schema, target_table)] = {
                 "view_name": view_data["view_name"],

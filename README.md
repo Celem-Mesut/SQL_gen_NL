@@ -128,12 +128,67 @@ Kolon sırası: önce kaynak (`source_*`), sonra hedef (`target_*`).
 | `where_condition` | ❌ | View'in WHERE koşuluna eklenir. Aynı view içinde birden fazla satırda belirtilirse **AND** ile birleştirilir |
 | `join_type` | ❌ | Birden fazla kaynak tablo varsa, o tabloya ait **ilk satırda** belirtilir (`INNER`/`LEFT`/`RIGHT`/`FULL`) |
 | `join_condition` | ❌ | `join_type` ile birlikte, ON koşulu (serbest metin) |
+| `union_group` | ❌ | Birden fazla tabloyu `UNION ALL` ile tek view'de birleştirmek için (bkz. aşağıdaki bölüm). Boşsa union yok — eski davranış aynen sürer |
 
 ### Filtre-only satırlar
 
 `target_column` ve `target_datatype` ikisi de boş bırakılırsa, satır SELECT
 listesine kolon eklemez; sadece `where_condition` üzerinden view'in WHERE
 koşuluna katkıda bulunur (bu durumda `where_condition` zorunludur).
+
+## ➕ Birden fazla tabloyu UNION ile birleştirme
+
+`union_group` kolonuyla, birden fazla kaynak tabloyu (satır olarak) tek bir
+view'de `UNION ALL` ile birleştirebilirsiniz — JOIN'den farklı olarak
+(tablolar yan yana/sütun olarak birleşir), UNION'da tablolar alt alta/satır
+olarak birleşir.
+
+**Nasıl çalışır:**
+- Aynı `target_table` grubundaki satırlar, `union_group` değerine göre
+  "dallara" (branch) ayrılır (örn. `1`, `2`, `3`...).
+- Her dal kendi bağımsız SELECT'ini üretir — dal içinde JOIN de kullanılabilir
+  (birden fazla kaynak tablo, `join_type`/`join_condition` ile).
+- Tüm dallar sonunda `UNION ALL` ile birleştirilir.
+- **Boş bırakılırsa** (varsayılan): union yok, eski davranış aynen sürer.
+- **Doldurulursa**: o `target_table`'a ait **tüm** satırlarda doldurulmuş
+  olması zorunludur — bazı satırlarda dolu, bazılarında boş bırakmak hataya
+  neden olur.
+
+**Dallar arasında farklı kolon kümesi olabilir:** bir dalda bulunmayan bir
+`target_column`, o dalda otomatik olarak doğru veri tipinde
+`CAST(NULL AS ...)` ile doldurulur — yani dalların birebir aynı kolonlara
+sahip olması gerekmez.
+
+**Örnek** — iki farklı bölge tablosunu (`OOST_REDEN`, `WEST_REDEN`) tek bir
+`FCT_REDEN` view'inde birleştirmek, `WEST_REDEN`'de `Omschrijving` kolonu
+yoksa:
+
+| source_table | source_column | target_column | union_group |
+|---|---|---|---|
+| OOST_REDEN | ID | ID | 1 |
+| OOST_REDEN | OMS | Omschrijving | 1 |
+| WEST_REDEN | ID_WEST | ID | 2 |
+
+Üretilen SQL:
+```sql
+CREATE OR ALTER VIEW [Gold].[VW_FCT_REDEN]
+AS
+SELECT
+    [ID] AS [ID],
+    [OMS] AS [Omschrijving]
+FROM [Silver].[OOST_REDEN]
+UNION ALL
+SELECT
+    [ID_WEST] AS [ID],
+    CAST(NULL AS NVARCHAR(100)) AS [Omschrijving]
+FROM [Silver].[WEST_REDEN]
+;
+GO
+```
+
+**Manuel kolonlar (Business Key) UNION ile birlikte** de çalışır — her dalda,
+o dalın kendi ifadesi (veya eksikse doğru tipte `NULL`) kullanılarak ayrı
+ayrı hesaplanır, tutarlılık bozulmaz.
 
 ## 🔗 Alias / tablo öneki kuralı
 

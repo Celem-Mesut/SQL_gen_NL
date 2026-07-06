@@ -309,7 +309,7 @@ def render_manual_columns_ui(view_key, col_map):
             for e in errors:
                 st.error(e)
         elif parts:
-            extra_columns.append({"name": name, "parts": parts})
+            extra_columns.append({"name": name, "parts": parts, "raw_text": raw_parts})
 
     return extra_columns
 

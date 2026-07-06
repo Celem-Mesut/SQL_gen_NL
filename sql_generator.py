@@ -279,11 +279,21 @@ def build_view_data(group_df, target_schema, target_table,
         if key not in table_keys:
             is_base = len(table_keys) == 0
             if not is_base and not row["join_condition"]:
+                hint = ""
+                if row.get("union_group"):
+                    hint = (
+                        " Tip: als deze tabellen met UNION ALL gecombineerd "
+                        "moeten worden in plaats van JOIN, geef ze dan "
+                        "VERSCHILLENDE union_group-waarden (bijv. 1, 2, 3) -- "
+                        "op dit moment hebben ze dezelfde union_group-waarde, "
+                        "waardoor ze als één JOIN-groep worden behandeld."
+                    )
                 errors.append(
                     f"Voor tabel '{row['source_table']}' is geen join_condition "
                     f"opgegeven (target_table={target_table}). Wanneer een view "
                     f"meerdere brontabellen gebruikt, zijn join_type en "
                     f"join_condition verplicht op de eerste rij van die tabel."
+                    + hint
                 )
             table_keys[key] = {
                 "alias": row["source_table"],

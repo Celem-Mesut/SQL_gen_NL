@@ -40,7 +40,7 @@ from sql_generator import (
     qualified_view_name,
     render_view_sql,
 )
-from lineage import build_lineage_dot, build_lineage_index, find_terminal_views
+from lineage import build_lineage_dot, build_lineage_index, build_lineage_mermaid, find_terminal_views
 from llm_client import DEFAULT_MODEL, ask_followup, check_sql_syntax
 
 st.set_page_config(page_title="CSV/Excel -> T-SQL View Generator", page_icon=":material/code:", layout="wide")
@@ -624,6 +624,17 @@ elif st.session_state.page == "Lineage":
     dot = build_lineage_dot(st.session_state.lineage_qname, lineage_index)
     st.graphviz_chart(dot)
 
+    with st.expander(":material/data_object: Mermaid-code weergeven (voor wiki's)"):
+        st.caption(
+            "Deze code geeft PRECIES hetzelfde diagram (dezelfde knopen, "
+            "pijlen en kleuren) weer als Mermaid-syntax -- rechtstreeks "
+            "bruikbaar in een ```mermaid codeblok op een Azure DevOps Wiki-"
+            "pagina (of GitHub/GitLab). Gebruik het kopieerpictogram rechts-"
+            "boven in het codeblok."
+        )
+        mermaid_code = build_lineage_mermaid(st.session_state.lineage_qname, lineage_index)
+        st.code(mermaid_code, language="text")
+
 
 # ============================================================================
 # PAGINA: Instellingen
@@ -784,4 +795,22 @@ elif st.session_state.page == "Documentatie & hulp":
             "view een diagram met de volledige herkomst over alle fasen heen "
             "(bijv. Silver → GGM → Gold). Dit wordt automatisch afgeleid uit de "
             "`source_table`-verwijzingen -- geen extra configuratie nodig."
+        )
+
+    with st.expander(":material/call_split: Hoe vul ik union_group correct in?"):
+        st.markdown(
+            "**Veelgemaakte fout:** dezelfde `union_group`-waarde geven aan "
+            "ALLE brontabellen van een doeltabel (bijv. alles `1`). Dit "
+            "vertelt het systeem dat die tabellen met JOIN gecombineerd "
+            "moeten worden, niet met UNION -- en JOIN vereist "
+            "`join_type`/`join_condition`, wat de foutmelding veroorzaakt.\n\n"
+            "**Juiste aanpak:** elke brontabel die een EIGEN UNION-tak moet "
+            "worden, krijgt een ANDERE `union_group`-waarde binnen dezelfde "
+            "doeltabel (bijv. `1`, `2`, `3`). Deze nummering hoeft alleen "
+            "binnen één doeltabel uniek te zijn -- u mag `1`, `2`, `3` "
+            "gerust hergebruiken voor een volgende doeltabel.\n\n"
+            "**Let op bij where_condition:** elke UNION-tak past ALLEEN zijn "
+            "eigen `where_condition`-rijen toe -- een filter wordt niet "
+            "automatisch naar andere takken gekopieerd. Wilt u dezelfde "
+            "filter op alle takken, vul die dan expliciet in bij elke tak."
         )

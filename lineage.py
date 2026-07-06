@@ -246,3 +246,57 @@ def build_lineage_dot(qname, index, direction="LR"):
         lines.append(f'  "{src}" -> "{dst}";')
     lines.append("}")
     return "\n".join(lines)
+
+
+def build_lineage_mermaid(qname, index, direction="LR"):
+    """qname icin soy agacini Mermaid flowchart sozdizimine cevirir --
+    build_lineage_dot ile AYNI dugum kumesini, kenarlari ve renk/seviye
+    mantigini (_assign_levels, _level_to_color, _PALETTE) kullanir, boylece
+    Graphviz gorseli ile Mermaid ciktisi HER ZAMAN tutarli kalir.
+
+    Azure DevOps Wiki (ve GitHub/GitLab wiki'leri) Mermaid kod bloklarini
+    dogrudan render eder -- bu fonksiyonun ciktisi, bir ```mermaid kod
+    bloguna oldugu gibi yapistirilabilir.
+
+    Mermaid dugum ID'leri alfasayisal olmak zorunda oldugundan (nitelikli
+    view adlari nokta/koseli-parantez icerebilir), her dugum icin sentetik
+    bir ID (n0, n1, ...) uretilir; GERCEK ad sadece dugumun ETIKETI (label)
+    olarak, tirnak icinde gosterilir.
+    """
+    nodes, edges = trace_lineage(qname, index)
+    levels = _assign_levels(nodes, index)
+    sorted_distinct_levels = sorted(set(levels.values()))
+
+    # Graphviz "TB"/"LR" -> Mermaid "TD"/"LR" (Mermaid "TB" degil "TD" kullanir).
+    mermaid_direction = "TD" if direction.upper() in ("TB", "TD") else direction.upper()
+
+    sorted_nodes = sorted(nodes)
+    node_ids = {n: f"n{i}" for i, n in enumerate(sorted_nodes)}
+
+    # Her benzersiz renk (fill,border) cifti icin bir classDef -- ayni
+    # renkteki dugumler ayni sinifi paylasir, kod daha kisa/okunakli olur.
+    color_to_class = {}
+    classdef_lines = []
+    for n in sorted_nodes:
+        color = _level_to_color(levels[n], sorted_distinct_levels)
+        if color not in color_to_class:
+            cls = f"lvl{len(color_to_class)}"
+            color_to_class[color] = cls
+            fill, border = color
+            classdef_lines.append(
+                f"    classDef {cls} fill:{fill},stroke:{border},color:#262624,stroke-width:1px;"
+            )
+
+    lines = [f"flowchart {mermaid_direction}"] + classdef_lines
+    for n in sorted_nodes:
+        nid = node_ids[n]
+        label = n.replace('"', "'")
+        cls = color_to_class[_level_to_color(levels[n], sorted_distinct_levels)]
+        extra = ",stroke-width:2.5px" if n == qname else ""
+        lines.append(f'    {nid}["{label}"]:::{cls}')
+        if extra:
+            lines.append(f"    style {nid} stroke-width:2.5px")
+    for src, dst in sorted(edges):
+        lines.append(f"    {node_ids[src]} --> {node_ids[dst]}")
+
+    return "\n".join(lines)

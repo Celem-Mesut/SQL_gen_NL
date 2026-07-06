@@ -1,23 +1,27 @@
 """
 doc_export.py
 -------------
-Tum fazlardaki/view'lerdeki mapping bilgisini TEK bir okunakli Markdown
-dokumanina birlestirir -- kopyalanip/indirilip bir wiki'ye (orn. Azure
-DevOps Wiki) yapistirilmak icin. Bu modulde hicbir Streamlit kodu YOKTUR;
-tum fonksiyonlar zaten hazirlanmis veriyi alip SAF metin ureten
-fonksiyonlardir (app.py bunlari cagirir).
+Her fase (bijv. Silver_to_GGM, GGM_to_Gold) icin AYRI bir okunakli Markdown
+dokumani uretir -- kopyalanip/indirilip bir wiki'ye (orn. Azure DevOps Wiki)
+yapistirilmak icin. Bu modulde hicbir Streamlit kodu YOKTUR; tum
+fonksiyonlar zaten hazirlanmis veriyi alip SAF metin ureten fonksiyonlardir
+(app.py bunlari cagirir).
 
 Sablon yapisi (her view icin):
     1. Baslik/meta bilgi (view adi, faz, warehouse, kaynak tablolar) -- OTOMATIK
     2. Business toelichting -- MANUEL (kullanicidan, bos birakilabilir)
-    3. Kolomtoewijzing tablosu -- OTOMATIK
+    3. Kolomtoewijzing tablosu (bron+hedef kolon, sadece ISIMLER) -- OTOMATIK
     4. Filters/join/union mantigi -- OTOMATIK
     5. Lineage (Mermaid kodu) -- OTOMATIK
-    6. Uretilen SQL -- OTOMATIK
 
-BILINCLI OLARAK DISINDA BIRAKILAN: ham CSV/Excel satir dokumu (Sjablonen'den
-de kaldirilmisti, kafa karistirici) ve ic uygulama detaylari (alias mantigi
-vb.) -- okuyucu kitlesi is/veri karisimi, asiri teknik detay gurultu olur.
+BILINCLI OLARAK DISINDA BIRAKILAN (kullanicinin acik talebi):
+    - Uretilen SQL betigi -- zaten Home sayfasinda mevcut, burada tekrarı
+      goz yorar/kafa karistirir.
+    - Doeltype ve transformatie kolonlari -- kolon tablosunda gorsel gurultu
+      yaratiyordu, sadece isim eslesmesi (bron->hedef) yeterli.
+    - Ham CSV/Excel satir dokumu -- Sjablonen'den de kaldirilmisti.
+    - Tum fazlari TEK bir dokumanda birlestirme -- her faz kendi AYRI
+      dokumanini/indirme dosyasini alir (bkz. build_stage_documentation).
 """
 
 from datetime import datetime
@@ -29,20 +33,22 @@ from sql_generator import qualified_view_name
 def _format_column_table(group_df):
     """group_df'teki (bir view'e ait tum satirlar) SADECE target_column
     dolu olan satirlardan bir Markdown tablosu uretir -- filtre-only
-    satirlar (target_column bos) burada DEGIL, Filters bolumunde gosterilir."""
+    satirlar (target_column bos) burada DEGIL, Filters bolumunde gosterilir.
+    SADECE brontabel/bronkolom/brontip/doelkolom gosterilir -- doeltype ve
+    transformatie kasten disarida birakildi (kullanicinin acik talebi:
+    gorsel gurultu azaltmak, SQL zaten teknik ek olarak Home'da mevcut)."""
     rows = group_df[group_df["target_column"] != ""]
     if rows.empty:
         return "_Geen kolommen._"
     lines = [
-        "| Brontabel | Bronkolom | Brontype | Doelkolom | Doeltype | Transformatie |",
-        "|---|---|---|---|---|---|",
+        "| Brontabel | Bronkolom | Brontype | Doelkolom |",
+        "|---|---|---|---|",
     ]
     for _, row in rows.iterrows():
-        transform = row["transformation"] or "—"
         src_type = row["source_datatype"] or "—"
         lines.append(
             f"| {row['source_table']} | {row['source_column']} | {src_type} "
-            f"| {row['target_column']} | {row['target_datatype']} | {transform} |"
+            f"| {row['target_column']} |"
         )
     return "\n".join(lines)
 
@@ -77,9 +83,11 @@ def _format_rules_section(group_df):
     return "\n".join(lines) if lines else "_Geen extra filters, joins of union._"
 
 
-def build_view_markdown(stage_name, view_data, group_df, final_sql, lineage_index, purpose_text=""):
+def build_view_markdown(stage_name, view_data, group_df, lineage_index, purpose_text=""):
     """Een enkele (target_schema, target_table) view naar een Markdown-
-    sectie omzet, volgens het sjabloon beschreven in de moduledocstring."""
+    sectie omzet, volgens het sjabloon beschreven in de moduledocstring.
+    Bevat GEEN gegenereerde SQL -- die is al zichtbaar op de Home-pagina;
+    hier zou het alleen visuele ruis toevoegen (expliciet verzoek gebruiker)."""
     qname = qualified_view_name(view_data, brackets=False)
     sources = list(dict.fromkeys(group_df["source_table"]))
 
@@ -111,37 +119,26 @@ def build_view_markdown(stage_name, view_data, group_df, final_sql, lineage_inde
         lines.append("```")
         lines.append("")
 
-    lines.append("### Gegenereerde SQL")
-    lines.append("```sql")
-    lines.append(final_sql)
-    lines.append("```")
     lines.append("\n---\n")
 
     return "\n".join(lines)
 
 
-def build_full_documentation(view_entries, lineage_index, purposes):
-    """Alle view's over alle fasen heen, in EEN groot Markdown-document.
-
-    view_entries: geordende lijst van dicts, elk met:
-        {"stage_name", "view_data", "group_df", "final_sql", "view_key"}
-    purposes: dict[view_key] -> business toelichting-tekst (mag leeg zijn)
-    """
+def build_stage_documentation(stage_name, view_entries, lineage_index, purposes):
+    """EEN fase (bijv. 'Silver_to_GGM') naar een OP ZICHZELF STAAND Markdown-
+    document omzet. app.py roept dit APART per fase aan, zodat elke fase
+    een eigen document/downloadbestand krijgt (expliciet verzoek gebruiker
+    -- niet meer één groot gecombineerd document)."""
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
     lines = [
-        "# Mapping-documentatie",
+        f"# Mapping-documentatie — {stage_name}",
         f"_Automatisch gegenereerd door csv2sql op {generated_at}._",
         "",
     ]
-    current_stage = None
     for entry in view_entries:
-        if entry["stage_name"] != current_stage:
-            current_stage = entry["stage_name"]
-            lines.append(f"# Fase: {current_stage}")
-            lines.append("")
         purpose = purposes.get(entry["view_key"], "")
         lines.append(build_view_markdown(
             entry["stage_name"], entry["view_data"], entry["group_df"],
-            entry["final_sql"], lineage_index, purpose_text=purpose,
+            lineage_index, purpose_text=purpose,
         ))
     return "\n".join(lines)

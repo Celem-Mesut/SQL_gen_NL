@@ -40,7 +40,7 @@ from sql_generator import (
     qualified_view_name,
     render_view_sql,
 )
-from doc_export import build_full_documentation
+from doc_export import build_stage_documentation
 from lineage import build_lineage_dot, build_lineage_index, build_lineage_mermaid, find_terminal_views
 from llm_client import DEFAULT_MODEL, ask_followup, check_sql_syntax
 
@@ -243,27 +243,6 @@ def _append_suggestion(parts_key, sugg_key):
         current = st.session_state.get(parts_key, "")
         sep = ", " if current.strip() else ""
         st.session_state[parts_key] = current + sep + picked
-
-
-def _read_manual_columns(view_key, col_map):
-    """render_manual_columns_ui'nin (Home-sayfasinda) cizdigi widget'larin
-    session_state'e yazdigi degerleri, WIDGET CIZMEDEN okur. Mapping-
-    document sayfasinda kullanilir -- orada ayni widget'lari tekrar
-    cizmeden, kullanicinin Home'da zaten girdigi manuel kolonlari (Business
-    Key vb.) SQL'e dahil etmek icin. Gecersiz/hatali girisler sessizce
-    atlanir (hata mesaji zaten Home sayfasinda bir kere gosterilir)."""
-    state_key = f"manual_cols_{view_key}"
-    extra_columns = []
-    for entry in st.session_state.get(state_key, []):
-        uid = entry["id"]
-        name = st.session_state.get(f"{state_key}_{uid}_name", "")
-        raw_parts = st.session_state.get(f"{state_key}_{uid}_parts", "")
-        if not name or not raw_parts.strip():
-            continue
-        parts, errors = parse_business_key_input(raw_parts, col_map)
-        if parts and not errors:
-            extra_columns.append({"name": name, "parts": parts, "raw_text": raw_parts})
-    return extra_columns
 
 
 def render_manual_columns_ui(view_key, col_map):
@@ -675,33 +654,46 @@ elif st.session_state.page == "Mapping-document":
     lineage_index = build_lineage_index(stages)
 
     st.caption(
-        "Eén doorlopend Markdown-document met alle gegenereerde views over "
-        "alle fasen heen -- inclusief kolomtoewijzing, filters/joins/union, "
-        "lineage (Mermaid) en de gegenereerde SQL. Geschikt om te kopiëren "
-        "of downloaden en in een wiki (bijv. Azure DevOps Wiki) te plakken."
+        "Eén Markdown-document PER FASE, met kolomtoewijzing, filters/joins/"
+        "union en lineage (Mermaid) -- geschikt om te kopiëren of downloaden "
+        "en in een wiki (bijv. Azure DevOps Wiki) te plakken. De gegenereerde "
+        "SQL zelf staat hier bewust niet in (die staat al op de "
+        "**:material/home: Home**-pagina)."
     )
 
-    # Alle view's verzamelen (over alle fasen), inclusief eventuele manuele
-    # kolommen (Business Key) die de gebruiker al op de Home-pagina heeft
-    # ingevuld voor die view.
+    if "mapping_doc_stage" not in st.session_state or st.session_state.mapping_doc_stage not in stages:
+        st.session_state.mapping_doc_stage = next(iter(stages))
+
+    multi_stage = len(stages) > 1
+    if multi_stage:
+        with st.container(key="mapping_doc_stage_nav"):
+            btn_cols = st.columns(len(stages))
+            for col, stage_name in zip(btn_cols, stages.keys()):
+                active = st.session_state.mapping_doc_stage == stage_name
+                if col.button(
+                    f"{_stage_icon(stage_name)}  {stage_name}",
+                    key=f"mapping_doc_stage_btn_{stage_name}",
+                    type="primary" if active else "secondary",
+                    width='stretch',
+                ):
+                    st.session_state.mapping_doc_stage = stage_name
+                    st.rerun()
+        st.divider()
+
+    selected_stage = st.session_state.mapping_doc_stage
+    stage_df = stages[selected_stage]
+    results, _warnings = generate_all_views(stage_df, use_create_or_alter=use_create_or_alter, add_go=add_go)
+
     view_entries = []
-    for stage_name, stage_df in stages.items():
-        results, _warnings = generate_all_views(stage_df, use_create_or_alter=use_create_or_alter, add_go=add_go)
-        for (target_schema, target_table), item in results.items():
-            view_key = f"{stage_name}::{target_schema}::{target_table}"
-            group_df = stage_df[
-                (stage_df["target_schema"] == target_schema) & (stage_df["target_table"] == target_table)
-            ]
-            col_map = {c["target_column"]: c["expr"] for c in item["view_data"]["columns"]}
-            extra_columns = _read_manual_columns(view_key, col_map)
-            final_sql = (
-                render_view_sql(item["view_data"], extra_columns=extra_columns)
-                if extra_columns else item["sql"]
-            )
-            view_entries.append({
-                "stage_name": stage_name, "view_data": item["view_data"],
-                "group_df": group_df, "final_sql": final_sql, "view_key": view_key,
-            })
+    for (target_schema, target_table), item in results.items():
+        view_key = f"{selected_stage}::{target_schema}::{target_table}"
+        group_df = stage_df[
+            (stage_df["target_schema"] == target_schema) & (stage_df["target_table"] == target_table)
+        ]
+        view_entries.append({
+            "stage_name": selected_stage, "view_data": item["view_data"],
+            "group_df": group_df, "view_key": view_key,
+        })
 
     st.markdown("##### :material/edit_note: Business toelichtingen (optioneel)")
     st.caption(
@@ -720,15 +712,15 @@ elif st.session_state.page == "Mapping-document":
             )
 
     st.divider()
-    doc = build_full_documentation(view_entries, lineage_index, purposes)
+    doc = build_stage_documentation(selected_stage, view_entries, lineage_index, purposes)
 
-    st.markdown("##### :material/description: Gegenereerd document")
+    st.markdown(f"##### :material/description: Document — {selected_stage}")
     st.code(doc, language="markdown")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     st.download_button(
-        "Download als Markdown (.md)", data=doc.encode("utf-8"),
-        file_name=f"mapping_documentatie_{timestamp}.md", mime="text/markdown",
+        f"Download {selected_stage} als Markdown (.md)", data=doc.encode("utf-8"),
+        file_name=f"mapping_documentatie_{selected_stage}_{timestamp}.md", mime="text/markdown",
         icon=":material/download:", type="primary",
     )
 

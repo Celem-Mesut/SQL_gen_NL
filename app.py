@@ -40,6 +40,7 @@ from sql_generator import (
     qualified_view_name,
     render_view_sql,
 )
+from doc_export import build_full_documentation
 from lineage import build_lineage_dot, build_lineage_index, build_lineage_mermaid, find_terminal_views
 from llm_client import DEFAULT_MODEL, ask_followup, check_sql_syntax
 
@@ -193,6 +194,7 @@ st.markdown(
 NAV_PAGES = [
     ("Home", ":material/home:"),
     ("Lineage", ":material/hub:"),
+    ("Mapping-document", ":material/description:"),
     ("Instellingen", ":material/settings:"),
     ("Documentatie & hulp", ":material/menu_book:"),
 ]
@@ -241,6 +243,27 @@ def _append_suggestion(parts_key, sugg_key):
         current = st.session_state.get(parts_key, "")
         sep = ", " if current.strip() else ""
         st.session_state[parts_key] = current + sep + picked
+
+
+def _read_manual_columns(view_key, col_map):
+    """render_manual_columns_ui'nin (Home-sayfasinda) cizdigi widget'larin
+    session_state'e yazdigi degerleri, WIDGET CIZMEDEN okur. Mapping-
+    document sayfasinda kullanilir -- orada ayni widget'lari tekrar
+    cizmeden, kullanicinin Home'da zaten girdigi manuel kolonlari (Business
+    Key vb.) SQL'e dahil etmek icin. Gecersiz/hatali girisler sessizce
+    atlanir (hata mesaji zaten Home sayfasinda bir kere gosterilir)."""
+    state_key = f"manual_cols_{view_key}"
+    extra_columns = []
+    for entry in st.session_state.get(state_key, []):
+        uid = entry["id"]
+        name = st.session_state.get(f"{state_key}_{uid}_name", "")
+        raw_parts = st.session_state.get(f"{state_key}_{uid}_parts", "")
+        if not name or not raw_parts.strip():
+            continue
+        parts, errors = parse_business_key_input(raw_parts, col_map)
+        if parts and not errors:
+            extra_columns.append({"name": name, "parts": parts, "raw_text": raw_parts})
+    return extra_columns
 
 
 def render_manual_columns_ui(view_key, col_map):
@@ -634,6 +657,80 @@ elif st.session_state.page == "Lineage":
         )
         mermaid_code = build_lineage_mermaid(st.session_state.lineage_qname, lineage_index)
         st.code(mermaid_code, language="text")
+
+
+# ============================================================================
+# PAGINA: Mapping-document
+# ============================================================================
+elif st.session_state.page == "Mapping-document":
+    st.title(":material/description: Mapping-document")
+
+    if not st.session_state.stages:
+        st.info("Upload eerst een bestand op de **:material/home: Home**-pagina.")
+        st.stop()
+
+    stages = st.session_state.stages
+    use_create_or_alter = st.session_state.get("opt_create_or_alter", True)
+    add_go = st.session_state.get("opt_add_go", True)
+    lineage_index = build_lineage_index(stages)
+
+    st.caption(
+        "Eén doorlopend Markdown-document met alle gegenereerde views over "
+        "alle fasen heen -- inclusief kolomtoewijzing, filters/joins/union, "
+        "lineage (Mermaid) en de gegenereerde SQL. Geschikt om te kopiëren "
+        "of downloaden en in een wiki (bijv. Azure DevOps Wiki) te plakken."
+    )
+
+    # Alle view's verzamelen (over alle fasen), inclusief eventuele manuele
+    # kolommen (Business Key) die de gebruiker al op de Home-pagina heeft
+    # ingevuld voor die view.
+    view_entries = []
+    for stage_name, stage_df in stages.items():
+        results, _warnings = generate_all_views(stage_df, use_create_or_alter=use_create_or_alter, add_go=add_go)
+        for (target_schema, target_table), item in results.items():
+            view_key = f"{stage_name}::{target_schema}::{target_table}"
+            group_df = stage_df[
+                (stage_df["target_schema"] == target_schema) & (stage_df["target_table"] == target_table)
+            ]
+            col_map = {c["target_column"]: c["expr"] for c in item["view_data"]["columns"]}
+            extra_columns = _read_manual_columns(view_key, col_map)
+            final_sql = (
+                render_view_sql(item["view_data"], extra_columns=extra_columns)
+                if extra_columns else item["sql"]
+            )
+            view_entries.append({
+                "stage_name": stage_name, "view_data": item["view_data"],
+                "group_df": group_df, "final_sql": final_sql, "view_key": view_key,
+            })
+
+    st.markdown("##### :material/edit_note: Business toelichtingen (optioneel)")
+    st.caption(
+        "Vult u hier niets in, dan blijft die sectie in het document leeg -- "
+        "u kunt het document dan zonder toelichting kopiëren en zelf verder "
+        "aanvullen op uw wiki-pagina."
+    )
+    purposes = {}
+    for entry in view_entries:
+        vk = entry["view_key"]
+        with st.expander(f":material/edit: {qualified_view_name(entry['view_data'])}"):
+            purposes[vk] = st.text_area(
+                "Business toelichting", key=f"purpose_{vk}", label_visibility="collapsed",
+                placeholder="Bijv. 'Deze view voedt het BI-rapport voor de Participatiewet-uitkeringen.'",
+                height=80,
+            )
+
+    st.divider()
+    doc = build_full_documentation(view_entries, lineage_index, purposes)
+
+    st.markdown("##### :material/description: Gegenereerd document")
+    st.code(doc, language="markdown")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    st.download_button(
+        "Download als Markdown (.md)", data=doc.encode("utf-8"),
+        file_name=f"mapping_documentatie_{timestamp}.md", mime="text/markdown",
+        icon=":material/download:", type="primary",
+    )
 
 
 # ============================================================================

@@ -752,25 +752,23 @@ elif st.session_state.page == "Instellingen":
 
     st.markdown("")
     with st.container(key="ai_settings_card"):
-        st.markdown("**:material/smart_toy: NVIDIA AI-assistent (optioneel)**")
+        st.markdown("**:material/smart_toy: NVIDIA AI-assistent**")
         st.caption(
             "Voor AI-syntaxcontrole en verfijningsvragen bij gegenereerde views "
-            "(zie de **:material/home: Home**-pagina, onder elke view). Een "
-            "gratis API-key is te verkrijgen via "
-            "[build.nvidia.com](https://build.nvidia.com)."
+            "(zie de **:material/home: Home**-pagina, onder elke view)."
         )
-        st.text_input(
-            "NVIDIA API-key", value=st.session_state.get("nvidia_api_key", ""),
-            key="nvidia_api_key", type="password", placeholder="nvapi-...",
-            help="Wordt alleen in het geheugen van deze sessie bewaard -- nooit "
-                 "opgeslagen op schijf of verzonden naar iets anders dan NVIDIA's API.",
+        model = st.session_state.get("nvidia_model", DEFAULT_MODEL)
+        api_key_set = bool(st.session_state.get("nvidia_api_key", ""))
+        st.caption(f":material/memory: Model: `{model}`")
+        st.caption(
+            (":material/check_circle: API-key is geconfigureerd door de beheerder."
+             if api_key_set else
+             ":material/cancel: Geen API-key geconfigureerd -- de AI-assistent is uitgeschakeld.")
         )
-        st.text_input(
-            "Model-ID", value=st.session_state.get("nvidia_model", DEFAULT_MODEL),
-            key="nvidia_model",
-            help="Model-ID uit de catalogus op build.nvidia.com/models (deze kan "
-                 "wijzigen -- controleer de exacte spelling daar). Een coding-"
-                 "gericht model wordt aangeraden voor syntaxcontrole.",
+        st.caption(
+            "De API-key en het model worden centraal beheerd (via secrets.toml/"
+            "Streamlit Secrets) en zijn hier alleen ter informatie -- niet "
+            "wijzigbaar door gebruikers."
         )
 
 
@@ -807,43 +805,87 @@ elif st.session_state.page == "Documentatie & hulp":
 
     st.divider()
     st.markdown("##### :material/quiz: Veelgestelde vragen")
-    with st.expander("CSV/Excel-kolombeschrijvingen"):
+    with st.expander(":material/list_alt: Kolomvolgorde & verplichte velden"):
         st.markdown(
             "**Kolomvolgorde:** eerst bron (`source_*`), dan doel (`target_*`).\n\n"
             "**Verplicht in elke rij:**\n"
             "- `source_schema`, `source_table`, `source_column`\n"
             "- `target_schema`, `target_table`\n\n"
-            "**target_column + target_datatype:** Worden samen opgegeven (normale "
-            "SELECT-kolom) **of** beide leeg gelaten — in dat geval is de rij "
-            "*uitsluitend een filter* (voegt geen kolom toe aan SELECT, alleen "
-            "`where_condition` wordt toegepast; in dat geval is `where_condition` "
-            "verplicht).\n\n"
-            "**Optionele kolommen:**\n"
-            "- `source_system`: Voor cross-warehouse/lakehouse QUERIES (3-delige "
-            "naamgeving, FROM/JOIN-kant). Vul hier de naam van het andere item in "
-            "wanneer u verwijst naar een ander Warehouse/Lakehouse (bijv. als de "
-            "GGM-laag in een ander Warehouse staat dan Gold). Leeg laten als het "
-            "in hetzelfde warehouse staat.\n"
-            "- `target_system`: Documenteert tot WELK warehouse/lakehouse deze view "
-            "behoort. Indien ingevuld wordt een ECHTE 3-delige naamgeving gebruikt in "
-            "`CREATE VIEW`: `[target_system].[target_schema].[view_name]` — nodig om "
-            "warehouses met gelijknamige schema's te onderscheiden. Indien leeg blijft "
-            "de eenvoudige 2-delige vorm `[target_schema].[view_name]` behouden. Moet "
-            "**gelijk** zijn voor alle rijen binnen één `target_table`-groep (of "
-            "allemaal leeg).\n"
-            "- `source_datatype`: Indien leeg of gelijk aan target_datatype wordt "
-            "geen CAST toegevoegd; indien verschillend wordt automatisch `CAST(...)` "
-            "toegepast.\n"
-            "- `transformation`: Aangepaste SQL-expressie. De placeholder `{src}` "
-            "wordt vervangen door de bronkolomverwijzing (bijv. `UPPER({src})`, "
-            "`CASE WHEN {src} < 18 THEN ... END`).\n"
-            "- `where_condition`: Wordt toegevoegd aan de WHERE-voorwaarde van de "
-            "view. `{src}` wordt vervangen door de eigen bronkolom van die rij. Als "
-            "dit op meerdere rijen binnen dezelfde `target_table` wordt opgegeven, "
-            "worden ze allemaal met **AND** gecombineerd.\n"
-            "- `join_type` / `join_condition`: Als binnen één `target_table` "
-            "meerdere brontabellen worden gebruikt, moeten deze op de **eerste "
-            "rij** van die tabel worden opgegeven (`INNER` / `LEFT` / `RIGHT` / `FULL`)."
+            "**target_column + target_datatype:** worden **samen** opgegeven "
+            "(normale SELECT-kolom) **of** beide leeg gelaten -- in dat geval is "
+            "de rij *uitsluitend een filter* (voegt geen kolom toe aan SELECT, "
+            "alleen `where_condition` wordt toegepast; in dat geval is "
+            "`where_condition` op die rij verplicht).\n\n"
+            "**source_datatype:** indien leeg of gelijk aan `target_datatype` "
+            "wordt geen `CAST` toegevoegd; indien verschillend wordt automatisch "
+            "`CAST(...)` toegepast."
+        )
+
+    with st.expander(":material/dns: source_system & target_system"):
+        st.markdown(
+            "**`source_system`** (optioneel): voor cross-warehouse/lakehouse "
+            "LEESVERWIJZINGEN (3-delige naamgeving, aan de FROM/JOIN-kant). Vul "
+            "hier de naam van het andere item in wanneer u verwijst naar een "
+            "ANDER Warehouse/Lakehouse dan waar deze view zelf in komt (bijv. "
+            "de GGM-laag staat in een ander Warehouse dan Gold). Leeg laten als "
+            "bron en doel in hetzelfde warehouse staan.\n\n"
+            "**`target_system`** (optioneel): documenteert ENKEL tot welk "
+            "warehouse/lakehouse deze view zelf behoort -- **puur informatief**. "
+            "Het verandert de `CREATE VIEW` NIET: die gebruikt altijd de "
+            "eenvoudige 2-delige vorm `[target_schema].[view_name]`, ongeacht "
+            "wat hier staat. Indien ingevuld wordt het alleen als een "
+            "commentaarregel bovenaan het gegenereerde script gezet (\"tegen "
+            "welke warehouse-verbinding moet ik dit script uitvoeren?\"), en in "
+            "de bestandsnaam bij downloaden. Moet **gelijk** zijn voor alle "
+            "rijen binnen één `target_table`-groep (of allemaal leeg)."
+        )
+
+    with st.expander(":material/functions: transformation"):
+        st.markdown(
+            "Een aangepaste SQL-expressie voor deze kolom, in plaats van een "
+            "kale 1-op-1 kopie. De placeholder **`{src}`** wordt vervangen door "
+            "de verwijzing naar de eigen bronkolom van die rij (met het juiste "
+            "alias-voorvoegsel indien er meerdere brontabellen zijn).\n\n"
+            "**Voorbeelden:**\n"
+            "- `UPPER({src})` → tekst in hoofdletters\n"
+            "- `CASE WHEN {src} < 18 THEN 'Minderjarig' ELSE 'Meerderjarig' END` "
+            "→ berekende categorie\n"
+            "- `CAST({src} AS DATE)` → expliciete conversie (naast de "
+            "automatische CAST op basis van `source_datatype`/`target_datatype`)\n\n"
+            "Leeg laten = gewone kopie van de bronkolom (met automatische CAST "
+            "indien nodig)."
+        )
+
+    with st.expander(":material/filter_alt: where_condition"):
+        st.markdown(
+            "Wordt toegevoegd aan de `WHERE`-voorwaarde van de view. De "
+            "placeholder **`{src}`** wordt vervangen door de bronkolom van "
+            "DEZELFDE rij.\n\n"
+            "**Voorbeeld:** rij met `source_column=DAT_EIND`, "
+            "`where_condition={src} IS NULL` → `WHERE ([DAT_EIND] IS NULL)`.\n\n"
+            "**Meerdere filters:** als dit op meerdere rijen binnen dezelfde "
+            "`target_table` (of dezelfde union-tak, zie `union_group`) wordt "
+            "opgegeven, worden ze allemaal met **AND** gecombineerd.\n\n"
+            "**Let op bij UNION:** een filter geldt alleen voor de tak "
+            "(`union_group`) waarin die rij staat -- wordt niet automatisch "
+            "gekopieerd naar andere takken."
+        )
+
+    with st.expander(":material/call_merge: join_type & join_condition"):
+        st.markdown(
+            "Nodig wanneer binnen één `target_table` **meerdere brontabellen** "
+            "worden gecombineerd door middel van een JOIN (kolommen naast "
+            "elkaar zetten -- voor rijen onder elkaar combineren, zie "
+            "`union_group`).\n\n"
+            "**Regel:** op de **eerste rij** waarop een NIEUWE brontabel "
+            "verschijnt (binnen die `target_table`, of binnen die union-tak), "
+            "moeten beide worden ingevuld:\n"
+            "- `join_type`: `INNER` / `LEFT` / `RIGHT` / `FULL`\n"
+            "- `join_condition`: de `ON`-voorwaarde, vrije tekst (bijv. "
+            "`[TabelA].[PersoonID] = [TabelB].[PersoonID]`)\n\n"
+            "De EERSTE brontabel die voor die `target_table` verschijnt heeft "
+            "GEEN `join_condition` nodig -- dat is de basistabel waar de andere "
+            "tabellen op aansluiten."
         )
 
     with st.expander(":material/link_2: Alias-/tabelprefixregel"):

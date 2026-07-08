@@ -29,6 +29,7 @@ Calistirmak icin:
 
 from datetime import datetime
 
+import pandas as pd
 import streamlit as st
 
 from sql_generator import (
@@ -382,11 +383,87 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
     uretilen tum nihai SQL metinlerinin listesi."""
     results, warnings = generate_all_views(df, use_create_or_alter=use_create_or_alter, add_go=add_go)
 
+    if st.session_state.get("fix_result"):
+        st.success(st.session_state.fix_result)
+        st.session_state.fix_result = None
+
     if warnings:
         st.warning(
-            "De volgende groepen zijn overgeslagen omdat ze fouten bevatten:\n\n"
-            + "\n\n".join(f"- {w['message']}" for w in warnings)
+            f":material/error: Er zijn {len(warnings)} groep(en) overgeslagen "
+            "omdat ze fouten bevatten. Herstel ze direct hieronder -- geen "
+            "nieuwe upload nodig."
         )
+        for w in warnings:
+            with st.expander(
+                f":material/build: Herstellen: {w['target_schema']}.{w['target_table']} "
+                f"({len(w['row_indices'])} rij(en))",
+                expanded=True,
+            ):
+                st.markdown(f":material/info_i: **Fout:** {w['message']}")
+                st.caption(
+                    "Pas de cellen hieronder aan (bevestig elke celwijziging met "
+                    "Enter), en klik daarna op Toepassen. Beweeg over een kolomkop "
+                    "voor een invulvoorbeeld."
+                )
+                editor_key = f"fixeditor_{stage_name}_{w['target_schema']}_{w['target_table']}"
+                rows_df = df.loc[w["row_indices"]].reset_index(drop=True)
+                edited = st.data_editor(
+                    rows_df,
+                    key=editor_key,
+                    num_rows="dynamic",
+                    width='stretch',
+                    column_config={
+                        "transformation": st.column_config.TextColumn(
+                            "transformation",
+                            help="Bijv. UPPER({src}) of CASE WHEN {src} < 18 THEN "
+                                 "'Minderjarig' ELSE 'Meerderjarig' END. Leeg = gewone kopie.",
+                        ),
+                        "where_condition": st.column_config.TextColumn(
+                            "where_condition",
+                            help="Bijv. {src} IS NOT NULL. Meerdere rijen worden met AND gecombineerd.",
+                        ),
+                        "join_type": st.column_config.TextColumn(
+                            "join_type",
+                            help="INNER / LEFT / RIGHT / FULL -- verplicht op de eerste "
+                                 "rij van een nieuwe brontabel.",
+                        ),
+                        "join_condition": st.column_config.TextColumn(
+                            "join_condition",
+                            help="Bijv. [TabelA].[PersoonID] = [TabelB].[PersoonID].",
+                        ),
+                        "union_group": st.column_config.TextColumn(
+                            "union_group",
+                            help="Bijv. 1, 2, 3 -- andere waarde per UNION-tak binnen "
+                                 "deze doeltabel.",
+                        ),
+                        "target_column": st.column_config.TextColumn(
+                            "target_column",
+                            help="Leeg + target_datatype ook leeg = filter-only rij.",
+                        ),
+                        "target_datatype": st.column_config.TextColumn(
+                            "target_datatype",
+                            help="Bijv. NVARCHAR(200), DECIMAL(18,2), DATE, INT.",
+                        ),
+                    },
+                )
+
+                if st.button(
+                    "Toepassen & opnieuw genereren", key=f"fixapply_{editor_key}",
+                    type="primary", icon=":material/check:",
+                ):
+                    try:
+                        cleaned = edited.fillna("").astype(str)
+                        remaining = df.drop(index=w["row_indices"])
+                        new_df = pd.concat([remaining, cleaned], ignore_index=True)
+                        st.session_state.stages[stage_name] = new_df
+                        st.session_state.fix_result = (
+                            f":material/check_circle: {len(cleaned)} rij(en) bijgewerkt "
+                            f"voor {w['target_schema']}.{w['target_table']} -- opnieuw gegenereerd."
+                        )
+                        st.rerun()
+                    except Exception as e:
+                        st.exception(e)
+        st.divider()
 
     if not results:
         st.error("In deze fase kon geen enkele geldige view worden gegenereerd.")
@@ -460,9 +537,16 @@ if st.session_state.page == "Home":
 
     uploaded_file = st.file_uploader("Upload uw CSV- of Excel-bestand (.xlsx)", type=["csv", "xlsx"])
 
+    # KRITIEK: file_uploader HOUDT het bestand vast over reruns heen. Zonder
+    # onderstaande handtekening-check zou het bestand bij ELKE rerun opnieuw
+    # worden geparsed en st.session_state.stages OVERSCHRIJVEN -- waardoor
+    # elke in-app correctie (zie render_stage) direct weer verloren ging.
+    # Dit was de kern van de eerdere "Toepassen doet niets"-bug.
     if uploaded_file is not None:
+        file_sig = f"{uploaded_file.name}::{uploaded_file.size}"
+        is_new_file = st.session_state.get("uploaded_file_sig") != file_sig
         is_excel = uploaded_file.name.lower().endswith(".xlsx")
-        if is_excel:
+        if is_excel and is_new_file:
             try:
                 stages, load_errors = load_mapping_excel(uploaded_file)
             except Exception as e:
@@ -477,24 +561,31 @@ if st.session_state.page == "Home":
                 st.error("Er is geen verwerkbaar blad gevonden in het Excel-bestand.")
             elif stages:
                 st.session_state.stages = stages
+                st.session_state.uploaded_file_sig = file_sig
                 st.session_state.load_info = (
                     f"Excel-bestand gelezen — {len(stages)} fase(n) (bladen) "
                     f"gevonden: {', '.join(stages.keys())}"
                 )
-        else:
+        elif not is_excel:
             delimiter = st.radio(
                 "CSV-scheidingsteken", options=["Automatisch detecteren", ",", ";", "\\t"], horizontal=True,
             )
             sep_map = {"Automatisch detecteren": None, ",": ",", ";": ";", "\\t": "\t"}
-            try:
-                df = load_mapping_csv(uploaded_file, sep=sep_map[delimiter])
-                stage_label = uploaded_file.name.rsplit(".", 1)[0] or "CSV"
-                st.session_state.stages = {stage_label: df}
-                st.session_state.load_info = f"CSV succesvol gelezen — {len(df)} rijen."
-            except ValidationError as e:
-                st.error(f"CSV-validatiefout:\n\n{e}")
-            except Exception as e:
-                st.error(f"CSV kon niet worden gelezen: {e}")
+            # CSV wordt WEL bij delimiter-wijziging opnieuw gelezen, maar niet
+            # bij elke willekeurige rerun -- daarom maakt de delimiter deel
+            # uit van de handtekening.
+            csv_sig = f"{file_sig}::{delimiter}"
+            if st.session_state.get("uploaded_file_sig") != csv_sig:
+                try:
+                    df = load_mapping_csv(uploaded_file, sep=sep_map[delimiter])
+                    stage_label = uploaded_file.name.rsplit(".", 1)[0] or "CSV"
+                    st.session_state.stages = {stage_label: df}
+                    st.session_state.uploaded_file_sig = csv_sig
+                    st.session_state.load_info = f"CSV succesvol gelezen — {len(df)} rijen."
+                except ValidationError as e:
+                    st.error(f"CSV-validatiefout:\n\n{e}")
+                except Exception as e:
+                    st.error(f"CSV kon niet worden gelezen: {e}")
 
     if st.session_state.load_info:
         st.success(st.session_state.load_info)

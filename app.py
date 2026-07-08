@@ -409,7 +409,19 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
                     "laatste toets nog niet meegenomen. Beweeg over een kolomkop voor "
                     "een invulvoorbeeld."
                 )
-                editor_key = f"fixeditor_{stage_name}_{w['target_schema']}_{w['target_table']}"
+                # Streamlit'in data_editor'i, AYNI key ile tekrar cagrildiginda
+                # bazen ONCEKI (eski) durumu onbellekte tutup taze veriyi
+                # gormezden gelebiliyor (bilinen bir Streamlit davranisi). Her
+                # "Toepassen" denemesinden sonra bu sayaci artirarak key'i
+                # DEGISTIRIYORUZ -- boylece her denemede SIFIRDAN, guncel
+                # veriyle baslayan taze bir editor olusuyor.
+                attempt_counter_key = f"fixattempt_{stage_name}_{w['target_schema']}_{w['target_table']}"
+                if attempt_counter_key not in st.session_state:
+                    st.session_state[attempt_counter_key] = 0
+                editor_key = (
+                    f"fixeditor_{stage_name}_{w['target_schema']}_{w['target_table']}"
+                    f"_{st.session_state[attempt_counter_key]}"
+                )
                 rows_df = df.loc[w["row_indices"]].reset_index(drop=True)
                 edited = st.data_editor(
                     rows_df,
@@ -460,6 +472,7 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
                         remaining = df.drop(index=w["row_indices"])
                         new_df = pd.concat([remaining, cleaned], ignore_index=True)
                         st.session_state.stages[stage_name] = new_df
+                        st.session_state[attempt_counter_key] += 1
                         st.session_state.fix_result = (
                             f":material/check_circle: {len(cleaned)} rij(en) bijgewerkt "
                             f"voor {w['target_schema']}.{w['target_table']} -- opnieuw gegenereerd."

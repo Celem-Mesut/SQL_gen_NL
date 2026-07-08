@@ -403,11 +403,10 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
             ):
                 st.markdown(f":material/info_i: **Fout:** {w['message']}")
                 st.caption(
-                    ":material/priority_high: **Belangrijk:** klik na het bewerken van "
-                    "een cel ergens BUITEN die cel (bijv. op deze tekst) om de wijziging "
-                    "te bevestigen, voordat u op Toepassen klikt -- anders wordt de "
-                    "laatste toets nog niet meegenomen. Beweeg over een kolomkop voor "
-                    "een invulvoorbeeld."
+                    ":material/priority_high: **Belangrijk:** druk na het bewerken van "
+                    "een cel op **Enter** (niet zomaar wegklikken) om de wijziging te "
+                    "bevestigen. Controleer daarna in het voorbeeld hieronder of uw "
+                    "wijziging is doorgekomen, VOOR u op Toepassen klikt."
                 )
                 # Streamlit'in data_editor'i, AYNI key ile tekrar cagrildiginda
                 # bazen ONCEKI (eski) durumu onbellekte tutup taze veriyi
@@ -462,6 +461,17 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
                         ),
                     },
                 )
+
+                with st.expander(
+                    ":material/visibility: Voorbeeld -- controleer dit VOOR u op "
+                    "Toepassen klikt (dit is wat daadwerkelijk wordt opgeslagen)",
+                    expanded=False,
+                ):
+                    preview_cols = [
+                        "source_table", "source_column", "target_column",
+                        "join_type", "join_condition", "where_condition", "union_group",
+                    ]
+                    st.dataframe(edited[preview_cols], width='stretch', hide_index=True)
 
                 if st.button(
                     "Toepassen & opnieuw genereren", key=f"fixapply_{editor_key}",

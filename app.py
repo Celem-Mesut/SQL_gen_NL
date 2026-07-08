@@ -403,58 +403,60 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
                 )
                 editor_key = f"fixeditor_{stage_name}_{w['target_schema']}_{w['target_table']}"
                 rows_df = df.loc[w["row_indices"]].reset_index(drop=True)
-                edited = st.data_editor(
-                    rows_df,
-                    key=editor_key,
-                    num_rows="dynamic",
-                    width='stretch',
-                    column_config={
-                        "transformation": st.column_config.TextColumn(
-                            "transformation",
-                            help="Aangepaste SQL-expressie. {src} = bronkolom. "
-                                 "Bijv. UPPER({src}) of CASE WHEN {src} < 18 THEN "
-                                 "'Minderjarig' ELSE 'Meerderjarig' END. Leeg = gewone kopie.",
-                        ),
-                        "where_condition": st.column_config.TextColumn(
-                            "where_condition",
-                            help="Filter voor de WHERE-clausule. {src} = bronkolom van "
-                                 "DEZE rij. Bijv. {src} IS NOT NULL. Meerdere rijen "
-                                 "worden met AND gecombineerd.",
-                        ),
-                        "join_type": st.column_config.TextColumn(
-                            "join_type",
-                            help="INNER / LEFT / RIGHT / FULL -- verplicht op de "
-                                 "EERSTE rij van een NIEUWE brontabel (niet nodig voor "
-                                 "de allereerste/basistabel).",
-                        ),
-                        "join_condition": st.column_config.TextColumn(
-                            "join_condition",
-                            help="De ON-voorwaarde, vrije tekst. Bijv. "
-                                 "[TabelA].[PersoonID] = [TabelB].[PersoonID]. Verplicht "
-                                 "samen met join_type.",
-                        ),
-                        "union_group": st.column_config.TextColumn(
-                            "union_group",
-                            help="Bijv. 1, 2, 3 -- een ANDERE waarde per UNION-tak "
-                                 "binnen deze doeltabel. Leeg = geen union. Nummers "
-                                 "hoeven alleen binnen deze doeltabel uniek te zijn.",
-                        ),
-                        "target_column": st.column_config.TextColumn(
-                            "target_column",
-                            help="Naam van de doelkolom. Leeg + target_datatype ook "
-                                 "leeg = deze rij is uitsluitend een filter (geen "
-                                 "SELECT-kolom).",
-                        ),
-                        "target_datatype": st.column_config.TextColumn(
-                            "target_datatype",
-                            help="Bijv. NVARCHAR(200), DECIMAL(18,2), DATE, INT.",
-                        ),
-                    },
-                )
-                if st.button(
-                    "Toepassen & opnieuw genereren", key=f"fixapply_{editor_key}",
-                    type="primary", icon=":material/check:",
-                ):
+                with st.form(key=f"fixform_{editor_key}"):
+                    edited = st.data_editor(
+                        rows_df,
+                        key=editor_key,
+                        num_rows="dynamic",
+                        width='stretch',
+                        column_config={
+                            "transformation": st.column_config.TextColumn(
+                                "transformation",
+                                help="Aangepaste SQL-expressie. {src} = bronkolom. "
+                                     "Bijv. UPPER({src}) of CASE WHEN {src} < 18 THEN "
+                                     "'Minderjarig' ELSE 'Meerderjarig' END. Leeg = gewone kopie.",
+                            ),
+                            "where_condition": st.column_config.TextColumn(
+                                "where_condition",
+                                help="Filter voor de WHERE-clausule. {src} = bronkolom van "
+                                     "DEZE rij. Bijv. {src} IS NOT NULL. Meerdere rijen "
+                                     "worden met AND gecombineerd.",
+                            ),
+                            "join_type": st.column_config.TextColumn(
+                                "join_type",
+                                help="INNER / LEFT / RIGHT / FULL -- verplicht op de "
+                                     "EERSTE rij van een NIEUWE brontabel (niet nodig voor "
+                                     "de allereerste/basistabel).",
+                            ),
+                            "join_condition": st.column_config.TextColumn(
+                                "join_condition",
+                                help="De ON-voorwaarde, vrije tekst. Bijv. "
+                                     "[TabelA].[PersoonID] = [TabelB].[PersoonID]. Verplicht "
+                                     "samen met join_type.",
+                            ),
+                            "union_group": st.column_config.TextColumn(
+                                "union_group",
+                                help="Bijv. 1, 2, 3 -- een ANDERE waarde per UNION-tak "
+                                     "binnen deze doeltabel. Leeg = geen union. Nummers "
+                                     "hoeven alleen binnen deze doeltabel uniek te zijn.",
+                            ),
+                            "target_column": st.column_config.TextColumn(
+                                "target_column",
+                                help="Naam van de doelkolom. Leeg + target_datatype ook "
+                                     "leeg = deze rij is uitsluitend een filter (geen "
+                                     "SELECT-kolom).",
+                            ),
+                            "target_datatype": st.column_config.TextColumn(
+                                "target_datatype",
+                                help="Bijv. NVARCHAR(200), DECIMAL(18,2), DATE, INT.",
+                            ),
+                        },
+                    )
+                    submitted = st.form_submit_button(
+                        "Toepassen & opnieuw genereren",
+                        type="primary", icon=":material/check:",
+                    )
+                if submitted:
                     cleaned = edited.fillna("").astype(str)
                     remaining = df.drop(index=w["row_indices"])
                     new_df = pd.concat([remaining, cleaned], ignore_index=True)

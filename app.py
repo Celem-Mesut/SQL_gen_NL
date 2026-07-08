@@ -427,29 +427,18 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
                 # BELANGRIJK (technische keuze): st.data_editor + een knop in
                 # dezelfde rerun-cyclus heeft een BEVESTIGDE Streamlit-bug
                 # (race condition) waarbij de laatste bewerking soms stilletjes
-                # verloren gaat -- ook binnen een st.form. Om dit volledig te
-                # vermijden gebruiken we losse tekstvelden MET een on_change-
-                # callback: elke wijziging wordt DIRECT (synchroon, bij het
-                # event zelf) weggeschreven naar een stabiele plek in
-                # session_state, volledig losgekoppeld van de Toepassen-knop.
+                # verloren gaat -- ook binnen een st.form EN met een on_change-
+                # callback. Daarom nu de MEEST DIRECTE aanpak: GEEN tussenlaag
+                # (geen data_editor, geen mirror-dict, geen callback) -- elk
+                # veld is een simpele st.text_input met een vaste key, en we
+                # lezen de waarden bij Toepassen RECHTSTREEKS uit
+                # st.session_state[key]. Dit is het meest fundamentele en
+                # best-geteste stukje Streamlit-gedrag dat er is.
                 values_key = f"fixvalues_{stage_name}_{w['target_schema']}_{w['target_table']}"
-                if values_key not in st.session_state:
-                    rows_df = df.loc[w["row_indices"]].reset_index(drop=True)
-                    st.session_state[values_key] = {
-                        i: {col: rows_df.loc[i, col] for col in editable_cols}
-                        for i in rows_df.index
-                    }
-                stored = st.session_state[values_key]
+                rows_df = df.loc[w["row_indices"]].reset_index(drop=True)
 
-                def _make_on_change(vk, row_i, col_name):
-                    widget_key = f"{vk}_{row_i}_{col_name}"
-
-                    def _cb():
-                        st.session_state[vk][row_i][col_name] = st.session_state[widget_key]
-                    return _cb
-
-                for i in sorted(stored.keys()):
-                    row_vals = stored[i]
+                for i in range(len(rows_df)):
+                    row_vals = rows_df.loc[i]
                     st.markdown(
                         f"**Rij {i + 1}:** `{row_vals['source_table'] or '—'}`.`{row_vals['source_column'] or '—'}` "
                         f"→ `{row_vals['target_column'] or '(filter-only)'}`"
@@ -457,18 +446,28 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
                     cols = st.columns(3)
                     for j, col_name in enumerate(editable_cols):
                         widget_key = f"{values_key}_{i}_{col_name}"
+                        if widget_key not in st.session_state:
+                            st.session_state[widget_key] = row_vals[col_name]
                         cols[j % 3].text_input(
-                            col_name, value=row_vals[col_name], key=widget_key,
+                            col_name, key=widget_key,
                             help=field_help.get(col_name),
-                            on_change=_make_on_change(values_key, i, col_name),
                         )
                     st.divider()
+
+                def _read_current_values():
+                    result_rows = []
+                    for i in range(len(rows_df)):
+                        result_rows.append({
+                            col: st.session_state.get(f"{values_key}_{i}_{col}", "")
+                            for col in editable_cols
+                        })
+                    return result_rows
 
                 with st.expander(
                     ":material/visibility: Voorbeeld -- dit wordt opgeslagen bij Toepassen",
                     expanded=False,
                 ):
-                    preview_df = pd.DataFrame([stored[i] for i in sorted(stored.keys())])
+                    preview_df = pd.DataFrame(_read_current_values())
                     st.dataframe(
                         preview_df[["source_table", "target_column", "join_type", "join_condition", "where_condition", "union_group"]],
                         width='stretch', hide_index=True,
@@ -480,12 +479,14 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
                 ):
                     try:
                         cleaned = pd.DataFrame(
-                            [stored[i] for i in sorted(stored.keys())], columns=editable_cols,
+                            _read_current_values(), columns=editable_cols,
                         ).fillna("").astype(str)
                         remaining = df.drop(index=w["row_indices"])
                         new_df = pd.concat([remaining, cleaned], ignore_index=True)
                         st.session_state.stages[stage_name] = new_df
-                        del st.session_state[values_key]
+                        for i in range(len(rows_df)):
+                            for col_name in editable_cols:
+                                st.session_state.pop(f"{values_key}_{i}_{col_name}", None)
                         st.session_state.fix_result = (
                             f":material/check_circle: {len(cleaned)} rij(en) bijgewerkt "
                             f"voor {w['target_schema']}.{w['target_table']} -- opnieuw gegenereerd."

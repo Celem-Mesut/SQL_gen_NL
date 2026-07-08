@@ -676,7 +676,12 @@ def generate_all_views(df, use_create_or_alter=True, add_go=True):
     Donus: (results, warnings)
         results: OrderedDict[(target_schema, target_table)] ->
                   {"view_name": str, "view_data": dict, "sql": str, "column_count": int}
-        warnings: gruplandirma/validasyon hatalarinin listesi (varsa)
+        warnings: basarisiz gruplarin listesi, her biri bir dict:
+                  {"target_schema", "target_table", "message", "row_indices"}
+                  -- row_indices, orijinal df'teki (stage_df) satir indeksleri;
+                  arayuzun (app.py) tam olarak HANGI satirlarin duzeltilmesi
+                  gerektigini bulup dogrudan duzenlenebilir bir tabloda
+                  gostermesini saglar (bkz. "Verbeteren" ozelligi).
     """
     results = OrderedDict()
     warnings = []
@@ -701,7 +706,12 @@ def generate_all_views(df, use_create_or_alter=True, add_go=True):
                 "column_count": len(view_data["columns"]),
             }
         except ValidationError as e:
-            warnings.append(str(e))
+            warnings.append({
+                "target_schema": target_schema,
+                "target_table": target_table,
+                "message": str(e),
+                "row_indices": group_df.index.tolist(),
+            })
     return results, warnings
 
 

@@ -403,86 +403,89 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
             ):
                 st.markdown(f":material/info_i: **Fout:** {w['message']}")
                 st.caption(
-                    ":material/priority_high: **Belangrijk:** druk na het bewerken van "
-                    "een cel op **Enter** (niet zomaar wegklikken) om de wijziging te "
-                    "bevestigen. Controleer daarna in het voorbeeld hieronder of uw "
-                    "wijziging is doorgekomen, VOOR u op Toepassen klikt."
+                    "Pas de velden hieronder aan -- elke wijziging wordt DIRECT "
+                    "opgeslagen zodra u het veld verlaat (geen aparte bevestiging "
+                    "nodig). Klik daarna op Toepassen."
                 )
-                # Streamlit'in data_editor'i, AYNI key ile tekrar cagrildiginda
-                # bazen ONCEKI (eski) durumu onbellekte tutup taze veriyi
-                # gormezden gelebiliyor (bilinen bir Streamlit davranisi). Her
-                # "Toepassen" denemesinden sonra bu sayaci artirarak key'i
-                # DEGISTIRIYORUZ -- boylece her denemede SIFIRDAN, guncel
-                # veriyle baslayan taze bir editor olusuyor.
-                attempt_counter_key = f"fixattempt_{stage_name}_{w['target_schema']}_{w['target_table']}"
-                if attempt_counter_key not in st.session_state:
-                    st.session_state[attempt_counter_key] = 0
-                editor_key = (
-                    f"fixeditor_{stage_name}_{w['target_schema']}_{w['target_table']}"
-                    f"_{st.session_state[attempt_counter_key]}"
-                )
-                rows_df = df.loc[w["row_indices"]].reset_index(drop=True)
-                edited = st.data_editor(
-                    rows_df,
-                    key=editor_key,
-                    num_rows="dynamic",
-                    width='stretch',
-                    column_config={
-                        "transformation": st.column_config.TextColumn(
-                            "transformation",
-                            help="Bijv. UPPER({src}) of CASE WHEN {src} < 18 THEN "
-                                 "'Minderjarig' ELSE 'Meerderjarig' END. Leeg = gewone kopie.",
-                        ),
-                        "where_condition": st.column_config.TextColumn(
-                            "where_condition",
-                            help="Bijv. {src} IS NOT NULL. Meerdere rijen worden met AND gecombineerd.",
-                        ),
-                        "join_type": st.column_config.TextColumn(
-                            "join_type",
-                            help="INNER / LEFT / RIGHT / FULL -- verplicht op de eerste "
-                                 "rij van een nieuwe brontabel.",
-                        ),
-                        "join_condition": st.column_config.TextColumn(
-                            "join_condition",
-                            help="Bijv. [TabelA].[PersoonID] = [TabelB].[PersoonID].",
-                        ),
-                        "union_group": st.column_config.TextColumn(
-                            "union_group",
-                            help="Bijv. 1, 2, 3 -- andere waarde per UNION-tak binnen "
-                                 "deze doeltabel.",
-                        ),
-                        "target_column": st.column_config.TextColumn(
-                            "target_column",
-                            help="Leeg + target_datatype ook leeg = filter-only rij.",
-                        ),
-                        "target_datatype": st.column_config.TextColumn(
-                            "target_datatype",
-                            help="Bijv. NVARCHAR(200), DECIMAL(18,2), DATE, INT.",
-                        ),
-                    },
-                )
+
+                editable_cols = [
+                    "source_system", "source_schema", "source_table", "source_column", "source_datatype",
+                    "target_system", "target_schema", "target_table", "target_column", "target_datatype",
+                    "transformation", "where_condition", "join_type", "join_condition", "union_group",
+                ]
+                field_help = {
+                    "transformation": "Bijv. UPPER({src}) of CASE WHEN {src} < 18 THEN "
+                                      "'Minderjarig' ELSE 'Meerderjarig' END. Leeg = gewone kopie.",
+                    "where_condition": "Bijv. {src} IS NOT NULL. Meerdere rijen worden met AND gecombineerd.",
+                    "join_type": "INNER / LEFT / RIGHT / FULL -- verplicht op de eerste rij van een nieuwe brontabel.",
+                    "join_condition": "Bijv. [TabelA].[PersoonID] = [TabelB].[PersoonID].",
+                    "union_group": "Bijv. 1, 2, 3 -- andere waarde per UNION-tak binnen deze doeltabel.",
+                    "target_column": "Leeg + target_datatype ook leeg = filter-only rij.",
+                    "target_datatype": "Bijv. NVARCHAR(200), DECIMAL(18,2), DATE, INT.",
+                }
+
+                # BELANGRIJK (technische keuze): st.data_editor + een knop in
+                # dezelfde rerun-cyclus heeft een BEVESTIGDE Streamlit-bug
+                # (race condition) waarbij de laatste bewerking soms stilletjes
+                # verloren gaat -- ook binnen een st.form. Om dit volledig te
+                # vermijden gebruiken we losse tekstvelden MET een on_change-
+                # callback: elke wijziging wordt DIRECT (synchroon, bij het
+                # event zelf) weggeschreven naar een stabiele plek in
+                # session_state, volledig losgekoppeld van de Toepassen-knop.
+                values_key = f"fixvalues_{stage_name}_{w['target_schema']}_{w['target_table']}"
+                if values_key not in st.session_state:
+                    rows_df = df.loc[w["row_indices"]].reset_index(drop=True)
+                    st.session_state[values_key] = {
+                        i: {col: rows_df.loc[i, col] for col in editable_cols}
+                        for i in rows_df.index
+                    }
+                stored = st.session_state[values_key]
+
+                def _make_on_change(vk, row_i, col_name):
+                    widget_key = f"{vk}_{row_i}_{col_name}"
+
+                    def _cb():
+                        st.session_state[vk][row_i][col_name] = st.session_state[widget_key]
+                    return _cb
+
+                for i in sorted(stored.keys()):
+                    row_vals = stored[i]
+                    st.markdown(
+                        f"**Rij {i + 1}:** `{row_vals['source_table'] or '—'}`.`{row_vals['source_column'] or '—'}` "
+                        f"→ `{row_vals['target_column'] or '(filter-only)'}`"
+                    )
+                    cols = st.columns(3)
+                    for j, col_name in enumerate(editable_cols):
+                        widget_key = f"{values_key}_{i}_{col_name}"
+                        cols[j % 3].text_input(
+                            col_name, value=row_vals[col_name], key=widget_key,
+                            help=field_help.get(col_name),
+                            on_change=_make_on_change(values_key, i, col_name),
+                        )
+                    st.divider()
 
                 with st.expander(
-                    ":material/visibility: Voorbeeld -- controleer dit VOOR u op "
-                    "Toepassen klikt (dit is wat daadwerkelijk wordt opgeslagen)",
+                    ":material/visibility: Voorbeeld -- dit wordt opgeslagen bij Toepassen",
                     expanded=False,
                 ):
-                    preview_cols = [
-                        "source_table", "source_column", "target_column",
-                        "join_type", "join_condition", "where_condition", "union_group",
-                    ]
-                    st.dataframe(edited[preview_cols], width='stretch', hide_index=True)
+                    preview_df = pd.DataFrame([stored[i] for i in sorted(stored.keys())])
+                    st.dataframe(
+                        preview_df[["source_table", "target_column", "join_type", "join_condition", "where_condition", "union_group"]],
+                        width='stretch', hide_index=True,
+                    )
 
                 if st.button(
-                    "Toepassen & opnieuw genereren", key=f"fixapply_{editor_key}",
+                    "Toepassen & opnieuw genereren", key=f"fixapply_{values_key}",
                     type="primary", icon=":material/check:",
                 ):
                     try:
-                        cleaned = edited.fillna("").astype(str)
+                        cleaned = pd.DataFrame(
+                            [stored[i] for i in sorted(stored.keys())], columns=editable_cols,
+                        ).fillna("").astype(str)
                         remaining = df.drop(index=w["row_indices"])
                         new_df = pd.concat([remaining, cleaned], ignore_index=True)
                         st.session_state.stages[stage_name] = new_df
-                        st.session_state[attempt_counter_key] += 1
+                        del st.session_state[values_key]
                         st.session_state.fix_result = (
                             f":material/check_circle: {len(cleaned)} rij(en) bijgewerkt "
                             f"voor {w['target_schema']}.{w['target_table']} -- opnieuw gegenereerd."

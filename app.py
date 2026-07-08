@@ -383,6 +383,12 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
     uretilen tum nihai SQL metinlerinin listesi."""
     results, warnings = generate_all_views(df, use_create_or_alter=use_create_or_alter, add_go=add_go)
 
+    if "fix_result" not in st.session_state:
+        st.session_state.fix_result = None
+    if st.session_state.fix_result:
+        st.success(st.session_state.fix_result)
+        st.session_state.fix_result = None
+
     if warnings:
         st.warning(
             f":material/error: Er zijn {len(warnings)} groep(en) overgeslagen "
@@ -397,8 +403,11 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
             ):
                 st.markdown(f":material/info_i: **Fout:** {w['message']}")
                 st.caption(
-                    "Pas de rijen hieronder direct aan en klik daarna op Toepassen. "
-                    "Beweeg over een kolomkop voor een invulvoorbeeld."
+                    ":material/priority_high: **Belangrijk:** klik na het bewerken van "
+                    "een cel ergens BUITEN die cel (bijv. op deze tekst) om de wijziging "
+                    "te bevestigen, voordat u op Toepassen klikt -- anders wordt de "
+                    "laatste toets nog niet meegenomen. Beweeg over een kolomkop voor "
+                    "een invulvoorbeeld."
                 )
                 editor_key = f"fixeditor_{stage_name}_{w['target_schema']}_{w['target_table']}"
                 rows_df = df.loc[w["row_indices"]].reset_index(drop=True)
@@ -442,25 +451,19 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
                     },
                 )
 
-                debug_col1, debug_col2 = st.columns([3, 1])
-                apply_clicked = debug_col1.button(
+                if st.button(
                     "Toepassen & opnieuw genereren", key=f"fixapply_{editor_key}",
                     type="primary", icon=":material/check:",
-                )
-                test_clicked = debug_col2.button(
-                    "Testknop", key=f"fixtest_{editor_key}",
-                    help="Tijdelijke knop om te controleren of klikken hier uberhaupt werkt.",
-                )
-                if test_clicked:
-                    st.toast("Testknop werkt -- klikken in dit gebied wordt gedetecteerd.", icon=":material/check_circle:")
-
-                if apply_clicked:
+                ):
                     try:
                         cleaned = edited.fillna("").astype(str)
                         remaining = df.drop(index=w["row_indices"])
                         new_df = pd.concat([remaining, cleaned], ignore_index=True)
                         st.session_state.stages[stage_name] = new_df
-                        st.success(f":material/check_circle: {len(cleaned)} rij(en) bijgewerkt -- opnieuw genereren...")
+                        st.session_state.fix_result = (
+                            f":material/check_circle: {len(cleaned)} rij(en) bijgewerkt "
+                            f"voor {w['target_schema']}.{w['target_table']} -- opnieuw gegenereerd."
+                        )
                         st.rerun()
                     except Exception as e:
                         st.exception(e)

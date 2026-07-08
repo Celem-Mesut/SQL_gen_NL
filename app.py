@@ -398,69 +398,72 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
                 st.markdown(f":material/info_i: **Fout:** {w['message']}")
                 st.caption(
                     "Pas de rijen hieronder direct aan en klik daarna op Toepassen. "
-                    "De invoervelden bevatten hulptekst met een voorbeeld."
+                    "Beweeg over een kolomkop voor een invulvoorbeeld."
                 )
                 editor_key = f"fixeditor_{stage_name}_{w['target_schema']}_{w['target_table']}"
                 rows_df = df.loc[w["row_indices"]].reset_index(drop=True)
-                editable_cols = [
-                    "source_system", "source_schema", "source_table", "source_column", "source_datatype",
-                    "target_system", "target_schema", "target_table", "target_column", "target_datatype",
-                    "transformation", "where_condition", "join_type", "join_condition", "union_group",
-                ]
-                field_help = {
-                    "transformation": "Bijv. UPPER({src}) of CASE WHEN {src} < 18 THEN "
-                                      "'Minderjarig' ELSE 'Meerderjarig' END. Leeg = gewone kopie.",
-                    "where_condition": "Bijv. {src} IS NOT NULL. Meerdere rijen worden met AND gecombineerd.",
-                    "join_type": "INNER / LEFT / RIGHT / FULL -- verplicht op de eerste rij van een nieuwe brontabel.",
-                    "join_condition": "Bijv. [TabelA].[PersoonID] = [TabelB].[PersoonID].",
-                    "union_group": "Bijv. 1, 2, 3 -- andere waarde per UNION-tak binnen deze doeltabel.",
-                    "target_column": "Leeg + target_datatype ook leeg = filter-only rij.",
-                    "target_datatype": "Bijv. NVARCHAR(200), DECIMAL(18,2), DATE, INT.",
-                }
+                edited = st.data_editor(
+                    rows_df,
+                    key=editor_key,
+                    num_rows="dynamic",
+                    width='stretch',
+                    column_config={
+                        "transformation": st.column_config.TextColumn(
+                            "transformation",
+                            help="Bijv. UPPER({src}) of CASE WHEN {src} < 18 THEN "
+                                 "'Minderjarig' ELSE 'Meerderjarig' END. Leeg = gewone kopie.",
+                        ),
+                        "where_condition": st.column_config.TextColumn(
+                            "where_condition",
+                            help="Bijv. {src} IS NOT NULL. Meerdere rijen worden met AND gecombineerd.",
+                        ),
+                        "join_type": st.column_config.TextColumn(
+                            "join_type",
+                            help="INNER / LEFT / RIGHT / FULL -- verplicht op de eerste "
+                                 "rij van een nieuwe brontabel.",
+                        ),
+                        "join_condition": st.column_config.TextColumn(
+                            "join_condition",
+                            help="Bijv. [TabelA].[PersoonID] = [TabelB].[PersoonID].",
+                        ),
+                        "union_group": st.column_config.TextColumn(
+                            "union_group",
+                            help="Bijv. 1, 2, 3 -- andere waarde per UNION-tak binnen "
+                                 "deze doeltabel.",
+                        ),
+                        "target_column": st.column_config.TextColumn(
+                            "target_column",
+                            help="Leeg + target_datatype ook leeg = filter-only rij.",
+                        ),
+                        "target_datatype": st.column_config.TextColumn(
+                            "target_datatype",
+                            help="Bijv. NVARCHAR(200), DECIMAL(18,2), DATE, INT.",
+                        ),
+                    },
+                )
 
-                with st.form(key=f"fixform_{editor_key}"):
-                    updated_rows = []
-                    for i, row in rows_df.iterrows():
-                        st.markdown(
-                            f"**Rij {i + 1}:** `{row['source_table'] or '—'}`.`{row['source_column'] or '—'}` "
-                            f"→ `{row['target_column'] or '(filter-only)'}`"
-                        )
-                        values = {}
-                        cols = st.columns(3)
-                        for j, col_name in enumerate(editable_cols):
-                            values[col_name] = cols[j % 3].text_input(
-                                col_name, value=row[col_name],
-                                key=f"{editor_key}_{i}_{col_name}",
-                                help=field_help.get(col_name),
-                            )
-                        updated_rows.append(values)
-                        st.divider()
+                debug_col1, debug_col2 = st.columns([3, 1])
+                apply_clicked = debug_col1.button(
+                    "Toepassen & opnieuw genereren", key=f"fixapply_{editor_key}",
+                    type="primary", icon=":material/check:",
+                )
+                test_clicked = debug_col2.button(
+                    "Testknop", key=f"fixtest_{editor_key}",
+                    help="Tijdelijke knop om te controleren of klikken hier uberhaupt werkt.",
+                )
+                if test_clicked:
+                    st.toast("Testknop werkt -- klikken in dit gebied wordt gedetecteerd.", icon=":material/check_circle:")
 
-                    st.caption(
-                        ":material/add: Extra rij toevoegen (bijv. een vergeten kolom) -- "
-                        "laat leeg om over te slaan."
-                    )
-                    extra_values = {}
-                    cols = st.columns(3)
-                    for j, col_name in enumerate(editable_cols):
-                        extra_values[col_name] = cols[j % 3].text_input(
-                            col_name, value="", key=f"{editor_key}_extra_{col_name}",
-                            help=field_help.get(col_name),
-                        )
-
-                    submitted = st.form_submit_button(
-                        "Toepassen & opnieuw genereren",
-                        type="primary", icon=":material/check:",
-                    )
-
-                if submitted:
-                    if extra_values["source_table"].strip() or extra_values["target_column"].strip():
-                        updated_rows.append(extra_values)
-                    new_rows_df = pd.DataFrame(updated_rows, columns=editable_cols).fillna("").astype(str)
-                    remaining = df.drop(index=w["row_indices"])
-                    new_df = pd.concat([remaining, new_rows_df], ignore_index=True)
-                    st.session_state.stages[stage_name] = new_df
-                    st.rerun()
+                if apply_clicked:
+                    try:
+                        cleaned = edited.fillna("").astype(str)
+                        remaining = df.drop(index=w["row_indices"])
+                        new_df = pd.concat([remaining, cleaned], ignore_index=True)
+                        st.session_state.stages[stage_name] = new_df
+                        st.success(f":material/check_circle: {len(cleaned)} rij(en) bijgewerkt -- opnieuw genereren...")
+                        st.rerun()
+                    except Exception as e:
+                        st.exception(e)
         st.divider()
 
     if not results:

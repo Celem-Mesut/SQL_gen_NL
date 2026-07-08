@@ -29,7 +29,6 @@ Calistirmak icin:
 
 from datetime import datetime
 
-import pandas as pd
 import streamlit as st
 
 from sql_generator import (
@@ -383,118 +382,11 @@ def render_stage(stage_name, df, use_create_or_alter, add_go):
     uretilen tum nihai SQL metinlerinin listesi."""
     results, warnings = generate_all_views(df, use_create_or_alter=use_create_or_alter, add_go=add_go)
 
-    if "fix_result" not in st.session_state:
-        st.session_state.fix_result = None
-    if st.session_state.fix_result:
-        st.success(st.session_state.fix_result)
-        st.session_state.fix_result = None
-
     if warnings:
         st.warning(
-            f":material/error: Er zijn {len(warnings)} groep(en) overgeslagen "
-            "omdat ze fouten bevatten. Herstel ze direct hieronder -- geen "
-            "nieuwe upload nodig."
+            "De volgende groepen zijn overgeslagen omdat ze fouten bevatten:\n\n"
+            + "\n\n".join(f"- {w['message']}" for w in warnings)
         )
-        for w in warnings:
-            with st.expander(
-                f":material/build: Herstellen: {w['target_schema']}.{w['target_table']} "
-                f"({len(w['row_indices'])} rij(en))",
-                expanded=True,
-            ):
-                st.markdown(f":material/info_i: **Fout:** {w['message']}")
-                st.caption(
-                    "Pas de velden hieronder aan -- elke wijziging wordt DIRECT "
-                    "opgeslagen zodra u het veld verlaat (geen aparte bevestiging "
-                    "nodig). Klik daarna op Toepassen."
-                )
-
-                editable_cols = [
-                    "source_system", "source_schema", "source_table", "source_column", "source_datatype",
-                    "target_system", "target_schema", "target_table", "target_column", "target_datatype",
-                    "transformation", "where_condition", "join_type", "join_condition", "union_group",
-                ]
-                field_help = {
-                    "transformation": "Bijv. UPPER({src}) of CASE WHEN {src} < 18 THEN "
-                                      "'Minderjarig' ELSE 'Meerderjarig' END. Leeg = gewone kopie.",
-                    "where_condition": "Bijv. {src} IS NOT NULL. Meerdere rijen worden met AND gecombineerd.",
-                    "join_type": "INNER / LEFT / RIGHT / FULL -- verplicht op de eerste rij van een nieuwe brontabel.",
-                    "join_condition": "Bijv. [TabelA].[PersoonID] = [TabelB].[PersoonID].",
-                    "union_group": "Bijv. 1, 2, 3 -- andere waarde per UNION-tak binnen deze doeltabel.",
-                    "target_column": "Leeg + target_datatype ook leeg = filter-only rij.",
-                    "target_datatype": "Bijv. NVARCHAR(200), DECIMAL(18,2), DATE, INT.",
-                }
-
-                # BELANGRIJK (technische keuze): st.data_editor + een knop in
-                # dezelfde rerun-cyclus heeft een BEVESTIGDE Streamlit-bug
-                # (race condition) waarbij de laatste bewerking soms stilletjes
-                # verloren gaat -- ook binnen een st.form EN met een on_change-
-                # callback. Daarom nu de MEEST DIRECTE aanpak: GEEN tussenlaag
-                # (geen data_editor, geen mirror-dict, geen callback) -- elk
-                # veld is een simpele st.text_input met een vaste key, en we
-                # lezen de waarden bij Toepassen RECHTSTREEKS uit
-                # st.session_state[key]. Dit is het meest fundamentele en
-                # best-geteste stukje Streamlit-gedrag dat er is.
-                values_key = f"fixvalues_{stage_name}_{w['target_schema']}_{w['target_table']}"
-                rows_df = df.loc[w["row_indices"]].reset_index(drop=True)
-
-                for i in range(len(rows_df)):
-                    row_vals = rows_df.loc[i]
-                    st.markdown(
-                        f"**Rij {i + 1}:** `{row_vals['source_table'] or '—'}`.`{row_vals['source_column'] or '—'}` "
-                        f"→ `{row_vals['target_column'] or '(filter-only)'}`"
-                    )
-                    cols = st.columns(3)
-                    for j, col_name in enumerate(editable_cols):
-                        widget_key = f"{values_key}_{i}_{col_name}"
-                        if widget_key not in st.session_state:
-                            st.session_state[widget_key] = row_vals[col_name]
-                        cols[j % 3].text_input(
-                            col_name, key=widget_key,
-                            help=field_help.get(col_name),
-                        )
-                    st.divider()
-
-                def _read_current_values():
-                    result_rows = []
-                    for i in range(len(rows_df)):
-                        result_rows.append({
-                            col: st.session_state.get(f"{values_key}_{i}_{col}", "")
-                            for col in editable_cols
-                        })
-                    return result_rows
-
-                with st.expander(
-                    ":material/visibility: Voorbeeld -- dit wordt opgeslagen bij Toepassen",
-                    expanded=False,
-                ):
-                    preview_df = pd.DataFrame(_read_current_values())
-                    st.dataframe(
-                        preview_df[["source_table", "target_column", "join_type", "join_condition", "where_condition", "union_group"]],
-                        width='stretch', hide_index=True,
-                    )
-
-                if st.button(
-                    "Toepassen & opnieuw genereren", key=f"fixapply_{values_key}",
-                    type="primary", icon=":material/check:",
-                ):
-                    try:
-                        cleaned = pd.DataFrame(
-                            _read_current_values(), columns=editable_cols,
-                        ).fillna("").astype(str)
-                        remaining = df.drop(index=w["row_indices"])
-                        new_df = pd.concat([remaining, cleaned], ignore_index=True)
-                        st.session_state.stages[stage_name] = new_df
-                        for i in range(len(rows_df)):
-                            for col_name in editable_cols:
-                                st.session_state.pop(f"{values_key}_{i}_{col_name}", None)
-                        st.session_state.fix_result = (
-                            f":material/check_circle: {len(cleaned)} rij(en) bijgewerkt "
-                            f"voor {w['target_schema']}.{w['target_table']} -- opnieuw gegenereerd."
-                        )
-                        st.rerun()
-                    except Exception as e:
-                        st.exception(e)
-        st.divider()
 
     if not results:
         st.error("In deze fase kon geen enkele geldige view worden gegenereerd.")

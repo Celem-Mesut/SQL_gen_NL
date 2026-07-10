@@ -816,20 +816,18 @@ elif st.session_state.page == "Mapping-document":
     )
 
     st.divider()
-    st.markdown("##### :material/folder_zip: Wiki-bundel (alle fasen, meerdere pagina's)")
+    st.markdown("##### :material/article: Wiki-pagina's per tabel")
     st.caption(
-        "Eén ZIP met een **Lineage-Overzicht**-hoofdpagina (alle lagen, van "
-        "Silver tot Gold, in één diagram) plus een **aparte pagina per tabel** "
-        "met de details. Voeg elke .md toe als wiki-pagina met dezelfde naam "
-        "als het bestand (Lineage-Overzicht als hoofdpagina, de tabellen als "
-        "subpagina's) -- de links tussen de pagina's werken dan automatisch. "
-        "Klikken op knopen in het Mermaid-diagram zelf wordt door Azure DevOps "
-        "Wiki niet ondersteund; daarom staan de klikbare tabel-links onder "
-        "het diagram."
+        "Een **Lineage-Overzicht**-hoofdpagina (alle lagen, van Silver tot "
+        "Gold, in één diagram) plus een **aparte pagina per tabel** met de "
+        "details. Kies hieronder een pagina en kopieer de inhoud met het "
+        "kopieerpictogram rechtsboven in het codeblok. Klikken op knopen in "
+        "het Mermaid-diagram zelf wordt door Azure DevOps Wiki niet "
+        "ondersteund; daarom staan de klikbare tabel-links onder het diagram."
     )
 
-    # Bundel omvat ALLE fasen (niet alleen de geselecteerde) -- verzamel dus
-    # alle view_entries + eventuele toelichtingen die al zijn ingevuld.
+    # Pagina's omvatten ALLE fasen (niet alleen de geselecteerde) -- verzamel
+    # dus alle view_entries + eventuele toelichtingen die al zijn ingevuld.
     all_entries = []
     all_purposes = {}
     for b_stage_name, b_stage_df in stages.items():
@@ -847,29 +845,6 @@ elif st.session_state.page == "Mapping-document":
 
     bundle = build_wiki_bundle(all_entries, lineage_index, all_purposes)
 
-    import io as _io
-    import zipfile as _zipfile
-    zip_buffer = _io.BytesIO()
-    with _zipfile.ZipFile(zip_buffer, "w", _zipfile.ZIP_DEFLATED) as zf:
-        for filename, content in bundle.items():
-            zf.writestr(filename, content)
-
-    st.download_button(
-        f"Download wiki-bundel ({len(bundle)} pagina's, .zip)",
-        data=zip_buffer.getvalue(),
-        file_name=f"wiki_bundel_{timestamp}.zip", mime="application/zip",
-        icon=":material/folder_zip:",
-    )
-
-    st.markdown("###### :material/content_copy: Of kopieer de pagina's direct van hier")
-    st.caption(
-        "Geen ZIP nodig: kies hieronder een pagina en kopieer de inhoud met "
-        "het kopieerpictogram rechtsboven in het codeblok. Maak in de wiki een "
-        "pagina genaamd **Lineage-Overzicht** (in de wiki-root), en voeg de "
-        "tabellen toe als **subpagina's daarvan**, met exact de naam die "
-        "hieronder in de keuzelijst staat (zonder .md) -- dan werken de links "
-        "tussen de pagina's automatisch."
-    )
     selected_page = st.selectbox(
         "Pagina", options=list(bundle.keys()),
         format_func=lambda f: f.removesuffix(".md"),

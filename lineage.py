@@ -248,26 +248,21 @@ def build_lineage_dot(qname, index, direction="LR"):
     return "\n".join(lines)
 
 
-def build_lineage_mermaid(qname, index, direction="LR"):
-    """qname icin soy agacini Mermaid flowchart sozdizimine cevirir --
-    build_lineage_dot ile AYNI dugum kumesini, kenarlari ve renk/seviye
-    mantigini (_assign_levels, _level_to_color, _PALETTE) kullanir, boylece
-    Graphviz gorseli ile Mermaid ciktisi HER ZAMAN tutarli kalir.
+def _render_mermaid(nodes, edges, levels, focus=None, direction="LR"):
+    """Ortak Mermaid uretici -- hem tekil soy agaci (build_lineage_mermaid)
+    hem tum-katman grafigi (build_full_lineage_mermaid) icin.
 
-    Azure DevOps Wiki (ve GitHub/GitLab wiki'leri) Mermaid kod bloklarini
-    dogrudan render eder -- bu fonksiyonun ciktisi, bir ```mermaid kod
-    bloguna oldugu gibi yapistirilabilir.
+    AZURE DEVOPS UYUMLULUGU (onemli): Azure DevOps Wiki, Mermaid'in eski
+    surumunu (8.14.0) kullanir ve 'flowchart' anahtar kelimesini DESTEKLEMEZ
+    -- 'graph' kullanilmalidir. Sinif atamasi da ':::' kisayolu yerine ayri
+    'class <id> <cls>' satirlariyla yapilir (eski surumlerde en genis
+    destege sahip soz dizimi).
 
     Mermaid dugum ID'leri alfasayisal olmak zorunda oldugundan (nitelikli
     view adlari nokta/koseli-parantez icerebilir), her dugum icin sentetik
     bir ID (n0, n1, ...) uretilir; GERCEK ad sadece dugumun ETIKETI (label)
-    olarak, tirnak icinde gosterilir.
-    """
-    nodes, edges = trace_lineage(qname, index)
-    levels = _assign_levels(nodes, index)
+    olarak, tirnak icinde gosterilir."""
     sorted_distinct_levels = sorted(set(levels.values()))
-
-    # Graphviz "TB"/"LR" -> Mermaid "TD"/"LR" (Mermaid "TB" degil "TD" kullanir).
     mermaid_direction = "TD" if direction.upper() in ("TB", "TD") else direction.upper()
 
     sorted_nodes = sorted(nodes)
@@ -277,6 +272,7 @@ def build_lineage_mermaid(qname, index, direction="LR"):
     # renkteki dugumler ayni sinifi paylasir, kod daha kisa/okunakli olur.
     color_to_class = {}
     classdef_lines = []
+    class_assignments = {}  # cls -> [node_id, ...]
     for n in sorted_nodes:
         color = _level_to_color(levels[n], sorted_distinct_levels)
         if color not in color_to_class:
@@ -286,17 +282,49 @@ def build_lineage_mermaid(qname, index, direction="LR"):
             classdef_lines.append(
                 f"    classDef {cls} fill:{fill},stroke:{border},color:#262624,stroke-width:1px;"
             )
+        class_assignments.setdefault(color_to_class[color], []).append(node_ids[n])
 
-    lines = [f"flowchart {mermaid_direction}"] + classdef_lines
+    lines = [f"graph {mermaid_direction}"] + classdef_lines
     for n in sorted_nodes:
         nid = node_ids[n]
         label = n.replace('"', "'")
-        cls = color_to_class[_level_to_color(levels[n], sorted_distinct_levels)]
-        extra = ",stroke-width:2.5px" if n == qname else ""
-        lines.append(f'    {nid}["{label}"]:::{cls}')
-        if extra:
-            lines.append(f"    style {nid} stroke-width:2.5px")
+        lines.append(f'    {nid}["{label}"]')
     for src, dst in sorted(edges):
         lines.append(f"    {node_ids[src]} --> {node_ids[dst]}")
+    for cls, ids in class_assignments.items():
+        lines.append(f"    class {','.join(ids)} {cls};")
+    if focus and focus in node_ids:
+        lines.append(f"    style {node_ids[focus]} stroke-width:2.5px")
 
     return "\n".join(lines)
+
+
+def build_lineage_mermaid(qname, index, direction="LR"):
+    """qname icin soy agacini Mermaid 'graph' sozdizimine cevirir --
+    build_lineage_dot ile AYNI dugum kumesini, kenarlari ve renk/seviye
+    mantigini (_assign_levels, _level_to_color, _PALETTE) kullanir, boylece
+    Graphviz gorseli ile Mermaid ciktisi HER ZAMAN tutarli kalir.
+
+    Azure DevOps Wiki (ve GitHub/GitLab wiki'leri) Mermaid kod bloklarini
+    dogrudan render eder -- cikti, bir ```mermaid kod bloguna oldugu gibi
+    yapistirilabilir (bkz. _render_mermaid'daki ADO-uyumluluk notlari)."""
+    nodes, edges = trace_lineage(qname, index)
+    levels = _assign_levels(nodes, index)
+    return _render_mermaid(nodes, edges, levels, focus=qname, direction=direction)
+
+
+def build_full_lineage_mermaid(index, direction="LR"):
+    """TUM asamalardaki TUM view'leri ve ham kaynak tablolarini TEK bir
+    Mermaid grafiginde birlestirir (Silver -> ... -> Gold, tek gorsel).
+    Renk/seviye mantigi tekil diyagramlarla birebir aynidir."""
+    table_lookup = _build_table_lookup(index)
+    nodes = set(index.keys())
+    edges = set()
+    for qname, info in index.items():
+        for source_table in info["direct_sources"]:
+            matched = _resolve_match(source_table, table_lookup, exclude=qname)
+            src_label = matched or source_table
+            nodes.add(src_label)
+            edges.add((src_label, qname))
+    levels = _assign_levels(nodes, index)
+    return _render_mermaid(nodes, edges, levels, direction=direction)

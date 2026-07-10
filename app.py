@@ -41,7 +41,7 @@ from sql_generator import (
     qualified_view_name,
     render_view_sql,
 )
-from doc_export import build_stage_documentation
+from doc_export import build_stage_documentation, build_wiki_bundle
 from lineage import build_lineage_dot, build_lineage_index, build_lineage_mermaid, find_terminal_views
 from llm_client import DEFAULT_MODEL, ask_followup, check_sql_syntax
 
@@ -815,6 +815,52 @@ elif st.session_state.page == "Mapping-document":
         icon=":material/download:", type="primary",
     )
 
+    st.divider()
+    st.markdown("##### :material/folder_zip: Wiki-bundel (alle fasen, meerdere pagina's)")
+    st.caption(
+        "Eén ZIP met een **Lineage-Overzicht**-hoofdpagina (alle lagen, van "
+        "Silver tot Gold, in één diagram) plus een **aparte pagina per tabel** "
+        "met de details. Voeg elke .md toe als wiki-pagina met dezelfde naam "
+        "als het bestand (Lineage-Overzicht als hoofdpagina, de tabellen als "
+        "subpagina's) -- de links tussen de pagina's werken dan automatisch. "
+        "Klikken op knopen in het Mermaid-diagram zelf wordt door Azure DevOps "
+        "Wiki niet ondersteund; daarom staan de klikbare tabel-links onder "
+        "het diagram."
+    )
+
+    # Bundel omvat ALLE fasen (niet alleen de geselecteerde) -- verzamel dus
+    # alle view_entries + eventuele toelichtingen die al zijn ingevuld.
+    all_entries = []
+    all_purposes = {}
+    for b_stage_name, b_stage_df in stages.items():
+        b_results, _ = generate_all_views(b_stage_df, use_create_or_alter=use_create_or_alter, add_go=add_go)
+        for (ts_, tt_), item in b_results.items():
+            vk = f"{b_stage_name}::{ts_}::{tt_}"
+            b_group_df = b_stage_df[
+                (b_stage_df["target_schema"] == ts_) & (b_stage_df["target_table"] == tt_)
+            ]
+            all_entries.append({
+                "stage_name": b_stage_name, "view_data": item["view_data"],
+                "group_df": b_group_df, "view_key": vk,
+            })
+            all_purposes[vk] = st.session_state.get(f"purpose_{vk}", "")
+
+    bundle = build_wiki_bundle(all_entries, lineage_index, all_purposes)
+
+    import io as _io
+    import zipfile as _zipfile
+    zip_buffer = _io.BytesIO()
+    with _zipfile.ZipFile(zip_buffer, "w", _zipfile.ZIP_DEFLATED) as zf:
+        for filename, content in bundle.items():
+            zf.writestr(filename, content)
+
+    st.download_button(
+        f"Download wiki-bundel ({len(bundle)} pagina's, .zip)",
+        data=zip_buffer.getvalue(),
+        file_name=f"wiki_bundel_{timestamp}.zip", mime="application/zip",
+        icon=":material/folder_zip:",
+    )
+
 
 # ============================================================================
 # PAGINA: Instellingen
@@ -945,6 +991,32 @@ elif st.session_state.page == "Documentatie & hulp":
             "automatische CAST op basis van `source_datatype`/`target_datatype`)\n\n"
             "Leeg laten = gewone kopie van de bronkolom (met automatische CAST "
             "indien nodig)."
+        )
+
+    with st.expander(":material/playlist_add: Een NULL-kolom toevoegen die niet in de bron bestaat"):
+        st.markdown(
+            "**Scenario:** een kolom bestaat (nog) niet in de bronlaag (bijv. "
+            "Silver), maar moet wél in de doellaag (bijv. GGM) aanwezig zijn -- "
+            "voorlopig gevuld met `NULL`.\n\n"
+            "**Oplossing:** gebruik de `transformation`-kolom met een vaste "
+            "`CAST(NULL AS ...)`-expressie. Omdat de expressie **geen** `{src}` "
+            "bevat, wordt de bronkolom volledig genegeerd.\n\n"
+            "**Zo vult u de rij in:**\n\n"
+            "| Kolom | Waarde |\n"
+            "|---|---|\n"
+            "| `source_schema` / `source_table` | Gewoon invullen (verplichte velden) -- de hoofdbrontabel van de view |\n"
+            "| `source_column` | Een **willekeurige bestaande** kolom van die tabel (verplicht veld, maar wordt niet gebruikt) |\n"
+            "| `target_column` | De naam van de nieuwe kolom |\n"
+            "| `target_datatype` | Het doeltype, bijv. `NVARCHAR(100)` |\n"
+            "| `transformation` | `CAST(NULL AS NVARCHAR(100))` -- **zelfde type als target_datatype** |\n\n"
+            "**Resultaat in de SQL:**\n"
+            "```sql\n"
+            "CAST(NULL AS NVARCHAR(100)) AS [NieuweKolom]\n"
+            "```\n\n"
+            ":material/lightbulb: **Tip:** houd het type in `CAST(NULL AS ...)` "
+            "gelijk aan `target_datatype`, zodat de typeconsistentie in de "
+            "doellaag behouden blijft (belangrijk als deze view later als bron "
+            "dient voor een MERGE of een volgende laag)."
         )
 
     with st.expander(":material/filter_alt: where_condition"):

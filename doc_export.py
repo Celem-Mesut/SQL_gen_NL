@@ -26,8 +26,19 @@ BILINCLI OLARAK DISINDA BIRAKILAN (kullanicinin acik talebi):
 
 from datetime import datetime
 
-from lineage import build_lineage_mermaid
+from lineage import build_full_lineage_mermaid, build_lineage_mermaid
 from sql_generator import qualified_view_name
+
+
+def _wiki_page_name(qname):
+    """Nitelikli view adini (orn. 'sot.VW_PW_X'), Azure DevOps Wiki'nin
+    sayfa adi olarak kabul ettigi guvenli bir bicime cevirir. ADO wiki
+    sayfa adlarinda bazi karakterler sorun cikarir; nokta yerine tire
+    kullanip diger riskli karakterleri temizliyoruz."""
+    safe = qname.replace(".", "-")
+    for ch in '/\\#?*:<>|"[]':
+        safe = safe.replace(ch, "")
+    return safe.replace(" ", "-")
 
 
 def _format_column_table(group_df):
@@ -142,3 +153,78 @@ def build_stage_documentation(stage_name, view_entries, lineage_index, purposes)
             lineage_index, purpose_text=purpose,
         ))
     return "\n".join(lines)
+
+
+def build_table_page(entry, lineage_index, purpose_text=""):
+    """Wiki-bundeli icin, TEK bir tabloya ait BAGIMSIZ bir .md sayfasi
+    uretir -- build_view_markdown ile ayni sablonu kullanir, ama H1
+    basligiyla (kendi basina bir sayfa oldugu icin) ve sonda ana sayfaya
+    geri donus linkiyle."""
+    view_data = entry["view_data"]
+    body = build_view_markdown(
+        entry["stage_name"], view_data, entry["group_df"],
+        lineage_index, purpose_text=purpose_text,
+    )
+    # build_view_markdown "## `[schema].[view]`" ile baslar -- sayfa
+    # basligi olarak H1'e yukseltiyoruz.
+    body = body.replace("## `", "# `", 1)
+    body += "\n[← Terug naar het lineage-overzicht](./Lineage-Overzicht)\n"
+    return body
+
+
+def build_wiki_bundle(view_entries, lineage_index, purposes):
+    """Azure DevOps Wiki icin COKLU-SAYFALI bir dokumantasyon paketi uretir.
+
+    Donus: OrderedDict[bestandsnaam.md] -> markdown-inhoud
+        - "Lineage-Overzicht.md": TUM katmanlari (Silver -> ... -> Gold) tek
+          bir Mermaid grafiginde gosteren ana sayfa + her tabloya tiklanabilir
+          linklerin listesi. (Mermaid'in click-ozelligi ADO Wiki'de
+          calismadigi icin, linkler diyagramin ALTINDAKI tabloda verilir.)
+        - Her uretilen view icin ayri bir "<sayfa-adi>.md".
+
+    KULLANIM (ADO Wiki): her .md dosyasini, DOSYA ADIYLA AYNI isimde bir
+    wiki-sayfasi olarak ekleyin (Lineage-Overzicht ana sayfa, tablolar onun
+    alt sayfalari olabilir) -- linkler goreli oldugu icin otomatik calisir.
+    """
+    from collections import OrderedDict
+
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    pages = OrderedDict()
+
+    overview = [
+        "# Lineage-overzicht",
+        f"_Automatisch gegenereerd door csv2sql op {generated_at}._",
+        "",
+        "Volledige herkomst (lineage) over alle fasen heen -- van de ruwe "
+        "bronlaag tot de eindlaag, in één diagram:",
+        "",
+        "```mermaid",
+        build_full_lineage_mermaid(lineage_index),
+        "```",
+        "",
+        "**Legenda:** 🟨 bronlaag (vroegste fase) · 🟦 tussenla(a)g(en) · "
+        "🟩 doellaag (eindtabellen)",
+        "",
+        "## Tabellen",
+        "",
+        "Klik op een tabel voor de details (kolomtoewijzing, filters, "
+        "eigen lineage):",
+        "",
+    ]
+
+    current_stage = None
+    for entry in view_entries:
+        qname = qualified_view_name(entry["view_data"], brackets=False)
+        page_name = _wiki_page_name(qname)
+        if entry["stage_name"] != current_stage:
+            current_stage = entry["stage_name"]
+            overview.append(f"\n### Fase: {current_stage}\n")
+        overview.append(f"- [`{qname}`](./{page_name})")
+
+        purpose = purposes.get(entry["view_key"], "")
+        pages[f"{page_name}.md"] = build_table_page(entry, lineage_index, purpose_text=purpose)
+
+    pages_out = OrderedDict()
+    pages_out["Lineage-Overzicht.md"] = "\n".join(overview) + "\n"
+    pages_out.update(pages)
+    return pages_out

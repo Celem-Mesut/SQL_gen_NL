@@ -861,6 +861,22 @@ elif st.session_state.page == "Mapping-document":
         icon=":material/folder_zip:",
     )
 
+    st.markdown("###### :material/content_copy: Of kopieer de pagina's direct van hier")
+    st.caption(
+        "Geen ZIP nodig: kies hieronder een pagina en kopieer de inhoud met "
+        "het kopieerpictogram rechtsboven in het codeblok. Maak in de wiki een "
+        "pagina genaamd **Lineage-Overzicht** (in de wiki-root), en voeg de "
+        "tabellen toe als **subpagina's daarvan**, met exact de naam die "
+        "hieronder in de keuzelijst staat (zonder .md) -- dan werken de links "
+        "tussen de pagina's automatisch."
+    )
+    selected_page = st.selectbox(
+        "Pagina", options=list(bundle.keys()),
+        format_func=lambda f: f.removesuffix(".md"),
+        key="wiki_bundle_page_select",
+    )
+    st.code(bundle[selected_page], language="markdown")
+
 
 # ============================================================================
 # PAGINA: Instellingen

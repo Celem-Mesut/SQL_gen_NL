@@ -168,7 +168,11 @@ def build_table_page(entry, lineage_index, purpose_text=""):
     # build_view_markdown "## `[schema].[view]`" ile baslar -- sayfa
     # basligi olarak H1'e yukseltiyoruz.
     body = body.replace("## `", "# `", 1)
-    body += "\n[← Terug naar het lineage-overzicht](./Lineage-Overzicht)\n"
+    # Mutlak wiki-yolu (wiki kokunden): goreli linkler (./...) ADO Wiki'de
+    # bulunulan sayfanin konumuna gore cozumlendigi icin kirilgandir --
+    # mutlak yol her sayfadan guvenilir calisir. Varsayim: Lineage-Overzicht
+    # wiki kokunde bir sayfa, tablolar onun alt sayfalari.
+    body += "\n[← Terug naar het lineage-overzicht](/Lineage-Overzicht)\n"
     return body
 
 
@@ -182,9 +186,11 @@ def build_wiki_bundle(view_entries, lineage_index, purposes):
           calismadigi icin, linkler diyagramin ALTINDAKI tabloda verilir.)
         - Her uretilen view icin ayri bir "<sayfa-adi>.md".
 
-    KULLANIM (ADO Wiki): her .md dosyasini, DOSYA ADIYLA AYNI isimde bir
-    wiki-sayfasi olarak ekleyin (Lineage-Overzicht ana sayfa, tablolar onun
-    alt sayfalari olabilir) -- linkler goreli oldugu icin otomatik calisir.
+    KULLANIM (ADO Wiki): "Lineage-Overzicht" adinda bir sayfa olusturun
+    (wiki KOKUNDE, bu isimle birebir ayni), tablolari onun ALT SAYFALARI
+    olarak dosya adiyla ayni isimde ekleyin. Linkler wiki kokunden mutlak
+    yol kullanir (/Lineage-Overzicht/<sayfa>) -- goreli linkler ADO'da
+    bulunulan konuma gore cozumlendigi icin bilerek KULLANILMAMISTIR.
     """
     from collections import OrderedDict
 
@@ -219,7 +225,7 @@ def build_wiki_bundle(view_entries, lineage_index, purposes):
         if entry["stage_name"] != current_stage:
             current_stage = entry["stage_name"]
             overview.append(f"\n### Fase: {current_stage}\n")
-        overview.append(f"- [`{qname}`](./{page_name})")
+        overview.append(f"- [`{qname}`](/Lineage-Overzicht/{page_name})")
 
         purpose = purposes.get(entry["view_key"], "")
         pages[f"{page_name}.md"] = build_table_page(entry, lineage_index, purpose_text=purpose)

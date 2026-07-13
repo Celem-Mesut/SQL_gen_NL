@@ -95,27 +95,26 @@ def build_lineage_index(stages):
 
 def _build_table_lookup(index):
     """index'teki her view icin, normallestirilmis target_table adindan
-    qualified_name'e giden bir arama tablosu kurar. Birden fazla view AYNI
-    tablo adina sahipse (farkli semalarda ayni isim), ILK GORULENI kullanir
-    (CSV/sayfa sirasina gore) -- bu, coklu eslesme belirsizligini cozmenin
-    en basit/ongorulebilir yoludur."""
+    qualified_name'LERE giden bir arama tablosu kurar. Birden fazla view AYNI
+    tablo adina sahipse (farkli semalarda ayni isim), HEPSI listede tutulur
+    (CSV/sayfa sirasi korunur) -- eski "ilk gorulen kazanir" kurali
+    kaldirildi: artik bir kaynak referansi birden fazla view'le eslesirse,
+    HER ESLESMEYE ayri bir ok cizilir (bkz. _resolve_matches)."""
     lookup = OrderedDict()
     for qname, info in index.items():
         key = _normalize_table(info["target_table"])
-        if key not in lookup:
-            lookup[key] = qname
+        lookup.setdefault(key, []).append(qname)
     return lookup
 
 
-def _resolve_match(source_table, table_lookup, exclude=None):
+def _resolve_matches(source_table, table_lookup, exclude=None):
     """source_table adinin (sema/system yok sayilarak), index'teki BASKA
-    bir view'in target_table'ina karsilik gelip gelmedigini kontrol eder.
-    Esleserse o view'in qualified adini, eslesmezse None doner."""
+    view'lerin target_table'ina karsilik gelip gelmedigini kontrol eder.
+    Donus: eslesen TUM view'lerin qualified adlarinin listesi (bos liste =
+    eslesme yok, yani ham/leaf kaynak). Ayni tablo adi birden fazla semada
+    uretilmisse hepsi doner -- cagiran taraf her birine ayri ok cizer."""
     key = _normalize_table(source_table)
-    matched = table_lookup.get(key)
-    if matched and matched != exclude:
-        return matched
-    return None
+    return [m for m in table_lookup.get(key, []) if m != exclude]
 
 
 def find_terminal_views(index):
@@ -132,14 +131,18 @@ def find_terminal_views(index):
     consumed = set()
     for qname, info in index.items():
         for source_table in info["direct_sources"]:
-            matched = _resolve_match(source_table, table_lookup, exclude=qname)
-            if matched:
+            for matched in _resolve_matches(source_table, table_lookup, exclude=qname):
                 consumed.add(matched)
     return [q for q in index if q not in consumed]
 
 
 def trace_lineage(qname, index, table_lookup=None, _visited=None):
     """qname icin TUM atalarini (ancestors) recursive olarak bulur.
+
+    Bir kaynak referansi, ayni tablo adini ureten BIRDEN FAZLA view'le
+    (farkli semalarda) eslesirse, HEPSINE ayri ok cizilir ve hepsinin
+    atalari izlenir -- iliski gorsel olarak oklarla belirtilir, eslesme
+    sessizce atilmaz.
 
     Donus: (nodes, edges)
         nodes: qualified-name string'lerinin kumesi (view'ler VE leaf kaynaklar)
@@ -161,11 +164,15 @@ def trace_lineage(qname, index, table_lookup=None, _visited=None):
         return nodes, edges  # leaf -- bizim urettigimiz bir view degil
 
     for source_table in info["direct_sources"]:
-        matched = _resolve_match(source_table, table_lookup, exclude=qname)
-        src_label = matched or source_table
-        nodes.add(src_label)
-        edges.add((src_label, qname))
-        if matched:
+        matches = _resolve_matches(source_table, table_lookup, exclude=qname)
+        if not matches:
+            # Ham/leaf kaynak -- CSV'deki adiyla tek dugum.
+            nodes.add(source_table)
+            edges.add((source_table, qname))
+            continue
+        for matched in matches:
+            nodes.add(matched)
+            edges.add((matched, qname))
             sub_nodes, sub_edges = trace_lineage(matched, index, table_lookup, _visited)
             nodes |= sub_nodes
             edges |= sub_edges
@@ -322,9 +329,13 @@ def build_full_lineage_mermaid(index, direction="LR"):
     edges = set()
     for qname, info in index.items():
         for source_table in info["direct_sources"]:
-            matched = _resolve_match(source_table, table_lookup, exclude=qname)
-            src_label = matched or source_table
-            nodes.add(src_label)
-            edges.add((src_label, qname))
+            matches = _resolve_matches(source_table, table_lookup, exclude=qname)
+            if not matches:
+                nodes.add(source_table)
+                edges.add((source_table, qname))
+                continue
+            for matched in matches:
+                nodes.add(matched)
+                edges.add((matched, qname))
     levels = _assign_levels(nodes, index)
     return _render_mermaid(nodes, edges, levels, direction=direction)

@@ -145,37 +145,14 @@ def _clean_and_validate(df):
     if df.empty:
         return df
 
-    bad_rows = df[
-        (df["source_schema"] == "") | (df["source_table"] == "") | (df["source_column"] == "")
-        | (df["target_schema"] == "") | (df["target_table"] == "")
-    ]
-    if not bad_rows.empty:
-        rij_woord = "rij" if len(bad_rows) == 1 else "rijen"
-        raise ValidationError(
-            f"Er zijn {len(bad_rows)} {rij_woord} gevonden met lege verplichte velden "
-            f"(0-geïndexeerde rijnummers: {list(bad_rows.index)}). De velden "
-            "source_schema, source_table, source_column, target_schema en "
-            "target_table mogen in geen enkele rij leeg zijn."
-        )
-
-    half_filled = df[
-        ((df["target_column"] == "") & (df["target_datatype"] != ""))
-        | ((df["target_column"] != "") & (df["target_datatype"] == ""))
-    ]
-    if not half_filled.empty:
-        raise ValidationError(
-            "target_column en target_datatype moeten samen worden opgegeven, "
-            "of samen leeg worden gelaten (voor een filter-only rij). "
-            f"Foutieve rijen (0-geïndexeerd): {list(half_filled.index)}."
-        )
-
-    filter_only_missing_condition = df[(df["target_column"] == "") & (df["where_condition"] == "")]
-    if not filter_only_missing_condition.empty:
-        raise ValidationError(
-            "Voor rijen waarin target_column en target_datatype leeg zijn "
-            "gelaten (filter-only), is where_condition verplicht. Foutieve "
-            f"rijen (0-geïndexeerd): {list(filter_only_missing_condition.index)}."
-        )
+    # NOT: satir-seviyesi icerik kontrolleri (bos zorunlu alanlar, yarim
+    # doldurulmus target_column/target_datatype, filter-only'de eksik
+    # where_condition) ESKIDEN burada TUM DOSYAYI REDDEDEREK yapiliyordu.
+    # Artik preflight_validate() bunlari SATIR SATIR, Excel satir
+    # numarasiyla raporluyor (bkz. app.py'deki "Controle van de invoer"
+    # paneli) -- dosya reddedilmek yerine kullanici tam listeyi gorur.
+    # Sorunlu satirlar view uretimi sirasinda grup-bazli hatalar olarak da
+    # yakalanmaya devam eder; burada dosyayi bloke etmek artik gereksiz.
 
     return df
 
@@ -719,3 +696,71 @@ def combine_sql(results):
     """Tum view SQL'lerini (varsayilan, Business Key'siz halleriyle) tek bir
     betik halinde birlestirir."""
     return "\n\n".join(item["sql"] for item in results.values())
+
+
+VALID_JOIN_TYPES = {"INNER", "LEFT", "RIGHT", "FULL"}
+
+
+def preflight_validate(df):
+    """Dosya yuklendigi anda, view uretimini DENEMEDEN once, tum satirlari
+    kolon-bazinda tarayip sorunlarin tam listesini cikarir. Boylece kullanici
+    "hangi satirda, hangi kolonda, ne eksik" bilgisini TEK seferde gorur --
+    grup-bazli uretim hatalarini beklemeden.
+
+    Donus: liste[dict], her biri:
+        {"excel_rij": int,   # Excel'deki gercek satir no (baslik=1, veri 2'den)
+         "kolom": str, "probleem": str}
+    Bos liste = sorun bulunamadi. NOT: bu kontroller build_view_data'daki
+    grup-bazli validasyonun YERINE gecmez, onu tamamlar (orada yakalanan
+    join-zinciri gibi baglamsal hatalar burada tekrarlanmaz)."""
+    issues = []
+
+    def add(idx, kolom, probleem):
+        issues.append({"excel_rij": idx + 2, "kolom": kolom, "probleem": probleem})
+
+    for idx, row in df.iterrows():
+        for col in ALWAYS_REQUIRED_COLUMNS:
+            if not row[col]:
+                add(idx, col, "Verplicht veld is leeg.")
+
+        tc, td = row["target_column"], row["target_datatype"]
+        if tc and not td:
+            add(idx, "target_datatype",
+                "target_column is ingevuld maar target_datatype is leeg -- "
+                "deze twee horen SAMEN ingevuld (of samen leeg voor een filter-only rij).")
+        if td and not tc:
+            add(idx, "target_column",
+                "target_datatype is ingevuld maar target_column is leeg -- "
+                "deze twee horen SAMEN ingevuld (of samen leeg voor een filter-only rij).")
+        if not tc and not td and not row["where_condition"]:
+            add(idx, "where_condition",
+                "target_column en target_datatype zijn beide leeg (filter-only rij), "
+                "maar where_condition is ook leeg -- deze rij doet dan niets.")
+
+        jt, jc = row["join_type"], row["join_condition"]
+        if jt and jt.upper() not in VALID_JOIN_TYPES:
+            add(idx, "join_type",
+                f"Onbekend join-type '{jt}' -- gebruik INNER, LEFT, RIGHT of FULL.")
+        if jt and not jc:
+            add(idx, "join_condition",
+                "join_type is ingevuld maar join_condition is leeg -- deze twee horen samen.")
+        if jc and not jt:
+            add(idx, "join_type",
+                "join_condition is ingevuld maar join_type is leeg -- deze twee horen samen.")
+
+        if row["transformation"] and "{scr}" in row["transformation"]:
+            add(idx, "transformation",
+                "Bevat '{scr}' -- bedoelde u de placeholder '{src}'?")
+
+    # Groep-niveau: gedeeltelijk ingevulde union_group binnen een doeltabel.
+    for (ts, tt), g in df.groupby(["target_schema", "target_table"], sort=False):
+        vals = g["union_group"].tolist()
+        non_blank = sum(1 for v in vals if v)
+        if 0 < non_blank < len(vals):
+            blank_rows = [i + 2 for i, v in zip(g.index, vals) if not v]
+            add(g.index[0], "union_group",
+                f"Deels ingevuld voor doeltabel '{ts}.{tt}': rijen {blank_rows} "
+                f"zijn leeg terwijl andere rijen wel een waarde hebben -- "
+                f"union_group moet OF overal OF nergens ingevuld zijn binnen een doeltabel.")
+
+    return issues

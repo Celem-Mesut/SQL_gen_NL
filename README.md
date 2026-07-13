@@ -95,8 +95,26 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Proje klasöründe çalıştırırsanız `.streamlit/config.toml` içindeki Claude.ai'ye
-yakın renk teması otomatik uygulanır (bkz. "Görsel tema" bölümü).
+Proje klasöründe çalıştırırsanız `.streamlit/config.toml` içindeki renk teması
+otomatik uygulanır (bkz. "Görsel tema" bölümü).
+
+## 🧪 Testler
+
+Çekirdek mantık (`sql_generator.py`, `lineage.py`, `doc_export.py`) `tests/`
+klasöründeki birim testleriyle korunur — JOIN/UNION üretimi, alias kuralı,
+CAST mantığı, filter-only satırlar, Business Key, pre-flight validasyon,
+çoklu-şema lineage eşleşmesi ve ADO-uyumlu Mermaid sözdizimi dahil.
+
+```bash
+pip install pytest
+pytest tests/ -v
+```
+
+Çekirdek dosyalarda bir değişiklik yaptıktan sonra **push etmeden önce**
+testleri çalıştırın — mevcut davranışı bozan bir değişiklik anında görünür.
+(Not: Home sayfasındaki AI-syntaxcontrole tamamlayıcı bir katmandır; model
+olasılıksaldır ve kod regresyonlarını garantiyle yakalayan şey bu
+deterministik testlerdir.)
 
 ## Tek aşama (CSV) vs. çok aşama (Excel)
 

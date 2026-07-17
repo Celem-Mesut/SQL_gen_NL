@@ -128,6 +128,19 @@ def render_manual_columns_ui(view_key, col_map):
             sug_col.selectbox(
                 "Kolom toevoegen", options=[""] + col_options, key=sugg_key,
                 label_visibility="collapsed",
+                # Belirsizligi onlemek icin: menude "Doelkolom <- bronexpressie"
+                # birlikte gosterilir. SQL'e HER ZAMAN sagdaki BRONexpressie
+                # yazilir -- SELECT'teki AS-takma-adi (doelkolomnaam) DEGIL.
+                # (T-SQL, ayni SELECT icindeki bir alias'a referans verilmesine
+                # izin vermez; arac bu yuzden alias'i hicbir zaman kullanmaz.)
+                # Secim anahtari yine doelkolomnaam'dir, cunku UNION'li
+                # view'lerde her dalin bronkolonu FARKLIDIR -- doelkolomnaam
+                # tum dallarda gecerli tek ortak kimliktir ve her dal icin
+                # kendi bronexpressiesine ayri ayri cevrilir.
+                format_func=lambda opt: f"{opt}  ←  {col_map[opt]}" if opt else opt,
+                help="Kies de doelkolom; in de SQL wordt automatisch de "
+                     "onderliggende bronexpressie (rechts van de pijl) "
+                     "ingevoegd -- nooit de AS-alias zelf.",
             )
             sug_btn.button(
                 "Toevoegen", key=f"{state_key}_{uid}_suggbtn",
@@ -187,6 +200,23 @@ def render_ai_assistant(view_key, final_sql):
         return
 
     check_key = f"aicheck_{view_key}"
+    def _friendly_api_error(e):
+        """API hatasini, kullanicinin ne yapabilecegini soyleyen mesaja cevirir.
+        'DEGRADED' = NVIDIA'nin barindirdigi model uc noktasi GECICI olarak
+        hizmet disi (SQL'le/kodla ilgisi yok); llm_client zaten birkac kez
+        otomatik denedi -- biraz bekleyip 'Opnieuw controleren' gerekir."""
+        msg = str(e)
+        if "DEGRADED" in msg:
+            return (
+                ":material/hourglass_top: Het NVIDIA-model is tijdelijk "
+                "overbelast/onbeschikbaar (status 'DEGRADED' -- dit ligt aan "
+                "NVIDIA's servers, niet aan uw SQL). Er is al automatisch een "
+                "paar keer opnieuw geprobeerd. Wacht even en klik op "
+                "**Opnieuw controleren**; houdt het aan, overweeg dan een "
+                "ander model-ID in de secrets-configuratie."
+            )
+        return f":material/error: Fout bij aanroepen van NVIDIA API: {msg}"
+
     auto_check = st.session_state.get("opt_auto_ai_check", True)
     if "ai_check_cache" not in st.session_state:
         st.session_state.ai_check_cache = {}
@@ -202,18 +232,14 @@ def render_ai_assistant(view_key, final_sql):
             try:
                 st.session_state.ai_check_cache[sql_hash] = check_sql_syntax(api_key, model, final_sql)
             except Exception as e:
-                st.session_state.ai_check_cache[sql_hash] = (
-                    f":material/error: Fout bij aanroepen van NVIDIA API: {e}"
-                )
+                st.session_state.ai_check_cache[sql_hash] = _friendly_api_error(e)
 
     if st.button("Opnieuw controleren", key=f"aicheck_btn_{view_key}", icon=":material/fact_check:"):
         with st.spinner("NVIDIA-model controleert de syntax..."):
             try:
                 st.session_state.ai_check_cache[sql_hash] = check_sql_syntax(api_key, model, final_sql)
             except Exception as e:
-                st.session_state.ai_check_cache[sql_hash] = (
-                    f":material/error: Fout bij aanroepen van NVIDIA API: {e}"
-                )
+                st.session_state.ai_check_cache[sql_hash] = _friendly_api_error(e)
     if sql_hash in st.session_state.ai_check_cache:
         st.info(st.session_state.ai_check_cache[sql_hash])
 
@@ -238,7 +264,7 @@ def render_ai_assistant(view_key, final_sql):
             try:
                 answer = ask_followup(api_key, model, final_sql, st.session_state[hist_key][:-1], question)
             except Exception as e:
-                answer = f":material/error: Fout bij aanroepen van NVIDIA API: {e}"
+                answer = _friendly_api_error(e)
         st.session_state[hist_key].append({"role": "assistant", "content": answer})
         st.rerun()
 

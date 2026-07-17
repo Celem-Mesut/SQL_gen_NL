@@ -313,3 +313,54 @@ def test_preflight_blokkeert_upload_niet():
     assert len(df) == 1
     issues = preflight_validate(df)
     assert any(i["kolom"] == "source_schema" for i in issues)
+
+
+def test_manuele_kolom_gebruikt_bronexpressie_niet_alias():
+    """Regressie (gebruikersmelding): een handmatige kolom (Business Key)
+    mag NOOIT de AS-alias (doelkolomnaam) in de SQL zetten -- T-SQL staat
+    het refereren van een alias binnen dezelfde SELECT niet toe. Er moet
+    altijd de onderliggende BRONexpressie worden ingevoegd, ook wanneer
+    bron- en doelnaam VERSCHILLEN en er een transformatie/CAST is."""
+    rows = [
+        dict(source_schema="S", source_table="T", source_column="COD_REDEN",
+             target_schema="G", target_table="Y", target_column="RedenID", target_datatype="INT"),
+        dict(source_schema="S", source_table="T", source_column="DAT_BEGIN", source_datatype="DATETIME2",
+             target_schema="G", target_table="Y", target_column="BeginDatum", target_datatype="DATE"),
+    ]
+    results, _ = generate_all_views(make_df(rows))
+    vd = results[("G", "Y")]["view_data"]
+    col_map = {c["target_column"]: c["expr"] for c in vd["columns"]}
+    parts, errors = parse_business_key_input('"OOST", RedenID, BeginDatum', col_map)
+    assert errors == []
+    sql = render_view_sql(vd, extra_columns=[{"name": "BK", "parts": parts,
+                                              "raw_text": '"OOST", RedenID, BeginDatum'}])
+    bk_line = next(l for l in sql.splitlines() if "[BK]" in l)
+    assert "[COD_REDEN]" in bk_line                     # bronexpressie
+    assert "CAST([DAT_BEGIN] AS DATE)" in bk_line       # bronexpressie met CAST
+    assert "[RedenID]" not in bk_line                   # alias NIET
+    assert "[BeginDatum]" not in bk_line                # alias NIET
+
+
+def test_manuele_kolom_union_per_tak_eigen_bronexpressie():
+    """In een UNION-view wordt de handmatige kolom per tak opnieuw opgelost:
+    elke tak gebruikt zijn EIGEN bronkolom (die per tak kan verschillen) --
+    nooit de gedeelde doelkolomnaam/alias."""
+    rows = [
+        dict(source_schema="S", source_table="OOST", source_column="COD_R",
+             target_schema="G", target_table="Z", target_column="RedenID",
+             target_datatype="INT", union_group="1"),
+        dict(source_schema="S", source_table="WEST", source_column="CODE_RW",
+             target_schema="G", target_table="Z", target_column="RedenID",
+             target_datatype="INT", union_group="2"),
+    ]
+    results, _ = generate_all_views(make_df(rows))
+    vd = results[("G", "Z")]["view_data"]
+    col_map = {c["target_column"]: c["expr"] for c in vd["columns"]}
+    parts, errors = parse_business_key_input('"X", RedenID', col_map)
+    assert errors == []
+    sql = render_view_sql(vd, extra_columns=[{"name": "BK", "parts": parts,
+                                              "raw_text": '"X", RedenID'}])
+    bk_lines = [l for l in sql.splitlines() if "[BK]" in l]
+    assert len(bk_lines) == 2
+    assert "[COD_R]" in bk_lines[0] and "[RedenID]" not in bk_lines[0]
+    assert "[CODE_RW]" in bk_lines[1] and "[RedenID]" not in bk_lines[1]

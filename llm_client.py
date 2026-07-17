@@ -24,6 +24,8 @@ Kurulum:
     baslayan bir API key alinir.)
 """
 
+import time
+
 from openai import OpenAI
 
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
@@ -68,12 +70,36 @@ def _client(api_key):
     return OpenAI(base_url=NVIDIA_BASE_URL, api_key=api_key)
 
 
+# Gecici (transient) hata isaretleri: bunlar gorulurse cagri, kisa bir
+# beklemeyle otomatik olarak yeniden denenir. "DEGRADED": build.nvidia.com'un
+# barindirdigi bir model uc noktasinin GECICI olarak asiri yuklu/hizmet disi
+# isaretlenmesi -- genellikle saniyeler/dakikalar icinde kendini toparlar.
+_TRANSIENT_MARKERS = ("DEGRADED", "429", "500", "502", "503", "504", "timed out", "timeout")
+_MAX_RETRIES = 2
+_BACKOFF_SECONDS = 2.0
+
+
+def _chat_with_retry(client, **kwargs):
+    """client.chat.completions.create'i, GECICI hatalarda (bkz.
+    _TRANSIENT_MARKERS) artan beklemeyle en fazla _MAX_RETRIES kez yeniden
+    dener. Kalici hatalar (401 auth, gecersiz istek vb.) ANINDA yukselir."""
+    for attempt in range(_MAX_RETRIES + 1):
+        try:
+            return client.chat.completions.create(**kwargs)
+        except Exception as e:
+            if attempt < _MAX_RETRIES and any(m in str(e) for m in _TRANSIENT_MARKERS):
+                time.sleep(_BACKOFF_SECONDS * (attempt + 1))
+                continue
+            raise
+
+
 def check_sql_syntax(api_key, model, sql):
     """Verstuurt de SQL naar het NVIDIA NIM-model voor een syntaxcontrole.
     Retourneert de tekstuele beoordeling (str). Kan een uitzondering
     opgooien (netwerk-/authenticatiefout) -- de aanroeper vangt deze af."""
     client = _client(api_key)
-    response = client.chat.completions.create(
+    response = _chat_with_retry(
+        client,
         model=model,
         messages=[
             {"role": "system", "content": SYNTAX_CHECK_SYSTEM_PROMPT},
@@ -107,7 +133,7 @@ def ask_followup(api_key, model, sql, history, question):
             "role": "user",
             "content": f"Hier is de huidige SQL:\n```sql\n{sql}\n```\n\n{question}",
         })
-    response = client.chat.completions.create(
-        model=model, messages=messages, temperature=0.3, max_tokens=1200,
+    response = _chat_with_retry(
+        client, model=model, messages=messages, temperature=0.3, max_tokens=1200,
     )
     return response.choices[0].message.content

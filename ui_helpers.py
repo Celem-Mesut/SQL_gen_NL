@@ -211,30 +211,23 @@ def render_ai_assistant(view_key, final_sql):
                 ":material/hourglass_top: Het NVIDIA-model is tijdelijk "
                 "overbelast/onbeschikbaar (status 'DEGRADED' -- dit ligt aan "
                 "NVIDIA's servers, niet aan uw SQL). Er is al automatisch een "
-                "paar keer opnieuw geprobeerd. Wacht even en klik op "
-                "**Opnieuw controleren**; houdt het aan, overweeg dan een "
+                "paar keer opnieuw geprobeerd. Wacht even en klik nogmaals op "
+                "**Syntax controleren**; houdt het aan, overweeg dan een "
                 "ander model-ID in de secrets-configuratie."
             )
         return f":material/error: Fout bij aanroepen van NVIDIA API: {msg}"
 
-    auto_check = st.session_state.get("opt_auto_ai_check", True)
     if "ai_check_cache" not in st.session_state:
         st.session_state.ai_check_cache = {}
     sql_hash = hashlib.md5(final_sql.encode("utf-8")).hexdigest()
 
-    # OTOMATIK kontrol: SQL (hash'i) daha once kontrol edilmediyse, buton
-    # beklemeden AI'ya gonder. Sonuc hash bazinda onbelleklenir -- ayni SQL
-    # icin (rerun'lar, sayfa gecisleri) API TEKRAR CAGRILMAZ; SQL degisirse
-    # (yeni upload, duzeltme, manuel kolon) hash degisir ve otomatik yeniden
-    # kontrol edilir.
-    if auto_check and sql_hash not in st.session_state.ai_check_cache:
-        with st.spinner("Automatische AI-syntaxcontrole..."):
-            try:
-                st.session_state.ai_check_cache[sql_hash] = check_sql_syntax(api_key, model, final_sql)
-            except Exception as e:
-                st.session_state.ai_check_cache[sql_hash] = _friendly_api_error(e)
-
-    if st.button("Opnieuw controleren", key=f"aicheck_btn_{view_key}", icon=":material/fact_check:"):
+    # UITSLUITEND HANDMATIGE controle (op verzoek gebruiker): bij 10+ views
+    # zou een automatische controle bij de eerste weergave 10+ opeenvolgende
+    # API-aanroepen betekenen -- lange wachttijd. De gebruiker kiest daarom
+    # zelf WELKE views gecontroleerd worden. Het resultaat wordt per unieke
+    # SQL (hash) gecachet, zodat het bij reruns/paginawissels bewaard blijft
+    # en dezelfde SQL niet per ongeluk dubbel wordt gecontroleerd.
+    if st.button("Syntax controleren", key=f"aicheck_btn_{view_key}", icon=":material/fact_check:"):
         with st.spinner("NVIDIA-model controleert de syntax..."):
             try:
                 st.session_state.ai_check_cache[sql_hash] = check_sql_syntax(api_key, model, final_sql)

@@ -588,17 +588,10 @@ elif st.session_state.page == "Instellingen":
              if api_key_set else
              ":material/cancel: Geen API-key geconfigureerd -- de AI-assistent is uitgeschakeld.")
         )
-        st.toggle(
-            "Automatische syntaxcontrole",
-            value=st.session_state.get("opt_auto_ai_check", True),
-            key="opt_auto_ai_check",
-            help="Indien ingeschakeld wordt elke gegenereerde view automatisch "
-                 "(zonder klik) ter controle naar het NVIDIA-model gestuurd. Het "
-                 "resultaat wordt per unieke SQL gecachet -- dezelfde view wordt "
-                 "niet opnieuw gecontroleerd zolang de SQL niet wijzigt. Schakel "
-                 "uit bij zeer grote bestanden (veel views = veel API-aanroepen "
-                 "bij de eerste weergave).",
-            disabled=not api_key_set,
+        st.caption(
+            ":material/touch_app: De syntaxcontrole is **handmatig**: klik per "
+            "view op *Syntax controleren* (op de Home-pagina) -- er wordt niets "
+            "automatisch naar het model gestuurd."
         )
         st.caption(
             "De API-key en het model worden centraal beheerd (via secrets.toml/"
